@@ -107,17 +107,6 @@ const SYSTEM_PROMPT = [
   'Android can launch visible installed apps. Windows can launch apps listed in the Start menu. Browser mode can only open known website fallbacks.',
 ].join(' ');
 
-async function openExternalUrl(url) {
-  if (Capacitor.getPlatform() === 'android') {
-    const result = await AppLauncher.openUrl({ url });
-    return result.completed
-      ? { success: true, message: 'Opened ' + url + '.' }
-      : { success: false, message: 'Android could not open that link.' };
-  }
-  window.open(url, '_blank', 'noopener,noreferrer');
-  return { success: true, message: 'Requested the browser to open ' + url + '.' };
-}
-
 function normalizeAppName(value) {
   return String(value || '')
     .toLowerCase()
