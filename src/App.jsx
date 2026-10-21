@@ -9,7 +9,7 @@ const initialMessages = [
   { role: 'assistant', text: 'Good evening. J.A.R.V.I.S. interface is online. I’m ready when you are.', time: 'NOW' },
 ];
 
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL = 'openai/gpt-oss-20b';
 const SYSTEM_PROMPT = 'You are J.A.R.V.I.S., a helpful personal AI assistant. Be clear, capable, and concise. Do not claim to control a device or perform an action unless the app explicitly confirms that capability.';
 
 function Orb({ listening }) {
@@ -76,7 +76,7 @@ export default function App() {
               .map(message => ({ role: message.role, content: message.text })),
           ],
           temperature: 0.7,
-          max_tokens: 1024,
+          max_completion_tokens: 1024,
         }),
       });
       const data = await response.json().catch(() => ({}));
