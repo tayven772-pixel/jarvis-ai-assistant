@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { AppLauncher } from '@capacitor/app-launcher';
 import {
   Activity, AudioLines, Bot, Check, ChevronDown, Command, Cpu, Headphones,
   MessageSquare, Mic, MicOff, Monitor, Moon, Power, Send, Settings2,
   ShieldCheck, Sparkles, Wifi, Zap
 } from 'lucide-react';
+
+const AppControl = registerPlugin('AppControl');
+const DEFAULT_FISH_VOICE_ID = '05b36da8574341d0803391491850db20';
+const FISH_AUDIO_MODEL = 's2.1-pro-free';
 
 const initialMessages = [
   { role: 'assistant', text: 'Good evening. J.A.R.V.I.S. interface is online. I’m ready when you are.', time: 'NOW' },
@@ -44,11 +48,11 @@ const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'open_app',
-      description: 'Open one supported app only when the user clearly asks to open or launch an app. This does not send messages, place calls, or change app settings.',
+      description: 'Launch an installed app by its visible name, only when the user clearly asks to open or launch it. JARVIS resolves the name locally against installed apps.',
       parameters: {
         type: 'object',
-        properties: { app: { type: 'string', enum: APP_CATALOG.map(item => item.id), description: 'The supported app identifier.' } },
-        required: ['app'],
+        properties: { app_name: { type: 'string', minLength: 1, maxLength: 120, description: 'The visible app name, such as Calculator, Discord, or Chrome.' } },
+        required: ['app_name'],
         additionalProperties: false,
       },
     },
@@ -96,11 +100,11 @@ const AI_TOOLS = [
 
 const SYSTEM_PROMPT = [
   'You are J.A.R.V.I.S., a helpful personal AI assistant. Be clear, capable, and concise.',
-  'You can use only the tools explicitly provided by the app: open an allowlisted app, open an allowlisted website, open a Google search page, or copy text when clearly requested.',
+  'You can use the app-launch tool to open installed apps by their visible name. JARVIS resolves the requested app locally; it does not send the full installed-app list to the AI provider.',
   'Call action tools only when the user clearly and directly asks for that action. Never claim an action succeeded until the app tool result says it succeeded.',
-  'You cannot execute arbitrary shell commands, run scripts, control arbitrary apps, send messages, place calls, or silently change device settings.',
+  'You cannot execute arbitrary shell commands, run scripts, click or type into arbitrary UI, send messages, place calls, or silently change device settings.',
   'For coding and terminal requests, write the command with its intended operating system, explain what it does, and flag risky/destructive effects. Draft commands for the user to review; never attempt to execute them.',
-  'The app may be running as a browser, Windows desktop app, or Android app. On the browser/desktop build, supported shortcuts may open a web version instead of a native phone app.',
+  'Android can launch visible installed apps. Windows can launch apps listed in the Start menu. Browser mode can only open known website fallbacks.',
 ].join(' ');
 
 async function openExternalUrl(url) {
@@ -114,45 +118,141 @@ async function openExternalUrl(url) {
   return { success: true, message: 'Requested the browser to open ' + url + '.' };
 }
 
-async function openAppById(appId) {
-  const app = APP_CATALOG.find(item => item.id === appId);
-  if (!app) return { success: false, message: 'That app is not on the supported allowlist.' };
-
-  if (Capacitor.getPlatform() === 'android') {
-    try {
-      const canOpen = await AppLauncher.canOpenUrl({ url: app.packageName });
-      if (canOpen.value) {
-        const result = await AppLauncher.openUrl({ url: app.packageName });
-        if (result.completed) return { success: true, message: 'Opening ' + app.label + ' on this phone.' };
-      }
-    } catch (error) {
-      // Fall through to the web fallback when the native app is not discoverable.
-    }
-
-    if (app.webUrl) {
-      try {
-        await AppLauncher.openUrl({ url: app.webUrl });
-        return { success: true, message: app.label + ' was not detected as installed, so I opened its web version.' };
-      } catch (error) {
-        return { success: false, message: 'Could not launch ' + app.label + ' or its web version.' };
-      }
-    }
-    return { success: false, message: app.label + ' could not be found on this phone. It may not be installed, or your phone may use a different app package.' };
-  }
-
-  if (app.webUrl) {
-    try {
-      window.open(app.webUrl, '_blank', 'noopener,noreferrer');
-      return { success: true, message: 'Opened the web version of ' + app.label + '.' };
-    } catch (error) {
-      return { success: false, message: 'Your browser blocked the web link. Open it manually: ' + app.webUrl };
-    }
-  }
-
-  return { success: false, message: app.label + ' can only be opened from the installed Android app.' };
+function normalizeAppName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/^(the|my)\s+/, '')
+    .replace(/[^a-z0-9]+/g, '');
 }
 
-async function runAssistantTool(toolCall, userRequest) {
+async function discoverInstalledApps() {
+  if (typeof window !== 'undefined' && window.jarvisDesktop?.listApps) {
+    const result = await window.jarvisDesktop.listApps();
+    return Array.isArray(result) ? result : [];
+  }
+
+  if (Capacitor.getPlatform() === 'android') {
+    const result = await AppControl.listLaunchableApps();
+    return Array.isArray(result?.apps) ? result.apps : [];
+  }
+
+  return APP_CATALOG.map(item => ({
+    name: item.label,
+    packageName: item.packageName,
+    id: item.id,
+    webUrl: item.webUrl,
+    platform: 'web',
+  }));
+}
+
+function findInstalledApp(requestedName, apps) {
+  const needle = normalizeAppName(requestedName);
+  if (!needle) return { app: null, ambiguous: [] };
+  const semanticName = name => normalizeAppName(name)
+    .replace(/^(google|microsoft|mozilla|meta|samsung|the)/, '');
+
+  const scored = (apps || []).map(item => {
+    const label = item.name || item.label || '';
+    const normalized = normalizeAppName(label);
+    const semantic = semanticName(label);
+    let score = 0;
+    if (normalized === needle) score = 100;
+    else if (semantic === needle) score = 95;
+    else if (normalized.startsWith(needle)) score = 70;
+    else if (semantic.startsWith(needle)) score = 68;
+    else if (normalized.includes(needle) && needle.length >= 3) score = 55;
+    else if (needle.includes(normalized) && normalized.length >= 4) score = 50;
+    return { item, score };
+  }).filter(entry => entry.score > 0).sort((a, b) => b.score - a.score);
+
+  if (!scored.length) return { app: null, ambiguous: [] };
+  const bestScore = scored[0].score;
+  const best = scored.filter(entry => entry.score === bestScore).map(entry => entry.item);
+  if (best.length === 1) return { app: best[0], ambiguous: [] };
+  return { app: null, ambiguous: best.slice(0, 5).map(item => item.name || item.label) };
+}
+
+async function openExternalUrl(url) {
+  if (!/^https:\/\/[a-z0-9.-]+(?::\d+)?(?:\/|$)/i.test(url)) {
+    return { success: false, message: 'That destination is not an approved HTTPS link.' };
+  }
+
+  if (typeof window !== 'undefined' && window.jarvisDesktop?.openExternal) {
+    const result = await window.jarvisDesktop.openExternal(url);
+    return result?.success
+      ? result
+      : { success: false, message: result?.message || 'Windows could not open that link.' };
+  }
+
+  if (Capacitor.getPlatform() === 'android') {
+    const result = await AppLauncher.openUrl({ url });
+    return result.completed
+      ? { success: true, message: 'Opened ' + url + '.' }
+      : { success: false, message: 'Android could not open that link.' };
+  }
+
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  return opened
+    ? { success: true, message: 'Requested the browser to open ' + url + '.' }
+    : { success: false, message: 'The browser blocked this new tab. Open the link manually: ' + url };
+}
+
+async function launchInstalledApp(requestedName, installedApps) {
+  const cleanName = String(requestedName || '').trim().slice(0, 120);
+  if (!cleanName) return { success: false, message: 'Tell me the name of the app you want to open.' };
+
+  const match = findInstalledApp(cleanName, installedApps);
+  const target = match.app;
+  if (!target) {
+    if (match.ambiguous.length) {
+      return { success: false, message: 'I found more than one matching app (' + match.ambiguous.join(', ') + '). Please use the full app name so I open the right one.' };
+    }
+    const known = APP_CATALOG.find(item =>
+      normalizeAppName(item.label) === normalizeAppName(cleanName) ||
+      normalizeAppName(item.id) === normalizeAppName(cleanName)
+    );
+    if (known?.webUrl) {
+      const fallback = await openExternalUrl(known.webUrl);
+      if (fallback.success) {
+        return { success: true, message: 'I could not find an installed ' + known.label + ' app, so I opened its website instead.' };
+      }
+      return fallback;
+    }
+    return {
+      success: false,
+      message: 'I could not find an installed app named "' + cleanName + '". Try its name as it appears in your app drawer or Windows Start menu.',
+    };
+  }
+
+  if (typeof window !== 'undefined' && window.jarvisDesktop?.launchApp) {
+    const result = await window.jarvisDesktop.launchApp(target.appId);
+    return result?.success
+      ? { success: true, message: result.message || 'Asked Windows to open ' + target.name + '.' }
+      : { success: false, message: result?.message || 'Windows could not launch ' + target.name + '.' };
+  }
+
+  if (Capacitor.getPlatform() === 'android') {
+    if (!target.packageName) {
+      return { success: false, message: 'Android did not provide a package identifier for ' + target.name + '.' };
+    }
+    const result = await AppControl.launchApp({ packageName: target.packageName });
+    return result?.success
+      ? { success: true, message: 'Launching ' + (result.name || target.name) + ' on your phone.' }
+      : { success: false, message: 'Android could not launch ' + target.name + '.' };
+  }
+
+  const known = APP_CATALOG.find(item =>
+    normalizeAppName(item.label) === normalizeAppName(target.name || '') ||
+    normalizeAppName(item.id) === normalizeAppName(target.id || '')
+  );
+  if (known?.webUrl) return openExternalUrl(known.webUrl);
+  return {
+    success: false,
+    message: 'This browser preview cannot launch installed apps. Install the Android APK or Windows app to use device launch.',
+  };
+}
+
+async function runAssistantTool(toolCall, userRequest, installedApps) {
   let args;
   try {
     args = JSON.parse(toolCall.function?.arguments || '{}');
@@ -160,14 +260,17 @@ async function runAssistantTool(toolCall, userRequest) {
     return { success: false, message: 'The AI returned invalid action arguments, so nothing was done.' };
   }
 
-  const asksToOpen = /\b(open|launch|start|switch to|bring up|take me to|go to|visit)\b/i.test(userRequest);
-  const asksToSearch = /\b(search|look up|find online|google)\b/i.test(userRequest);
-  const asksToCopy = /\b(copy|clipboard)\b/i.test(userRequest);
+  const asksToOpen = /\b(open|launch|start|switch to|bring up|take me to|go to|visit)\b/i.test(userRequest)
+    && !/\b(don't|do not|never|shouldn't|should not|without)\b.{0,50}\b(open|launch|start)\b/i.test(userRequest);
+  const asksToSearch = /\b(search|look up|find online|google)\b/i.test(userRequest)
+    && !/\b(don't|do not|never|shouldn't|should not|without)\b.{0,50}\b(search|look up|google)\b/i.test(userRequest);
+  const asksToCopy = /\b(copy|clipboard)\b/i.test(userRequest)
+    && !/\b(don't|do not|never|shouldn't|should not|without)\b.{0,50}\b(copy)\b/i.test(userRequest);
 
   switch (toolCall.function?.name) {
     case 'open_app':
       if (!asksToOpen) return { success: false, message: 'Not executed: the user did not clearly ask to open an app.' };
-      return await openAppById(args.app);
+      return await launchInstalledApp(args.app_name, installedApps);
     case 'open_website': {
       if (!asksToOpen) return { success: false, message: 'Not executed: the user did not clearly ask to open a website.' };
       const destination = WEB_DESTINATIONS[args.site];
@@ -217,8 +320,16 @@ export default function App() {
   const apiKey = provider === 'openai' ? openAiApiKey : groqApiKey;
   const setApiKey = provider === 'openai' ? setOpenAiApiKey : setGroqApiKey;
   const [model, setModel] = useState(DEFAULT_MODEL);
+  const [fishApiKey, setFishApiKey] = useState('');
+  const [voiceModelId, setVoiceModelId] = useState(DEFAULT_FISH_VOICE_ID);
+  const [speakResponses, setSpeakResponses] = useState(true);
+  const [voiceStatus, setVoiceStatus] = useState('FISH AUDIO KEY REQUIRED');
+  const [installedApps, setInstalledApps] = useState([]);
   const [actionInProgress, setActionInProgress] = useState('');
   const isAndroidApp = Capacitor.getPlatform() === 'android';
+  const isDesktopApp = typeof window !== 'undefined' && Boolean(window.jarvisDesktop);
+  const audioRef = useRef(null);
+  const audioUrlRef = useRef(null);
   const [sending, setSending] = useState(false);
   const [showConnectHint, setShowConnectHint] = useState(false);
   const [status, setStatus] = useState('API KEY REQUIRED');
@@ -231,6 +342,99 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages]);
+
+  useEffect(() => {
+    let active = true;
+    discoverInstalledApps()
+      .then(apps => { if (active) setInstalledApps(apps); })
+      .catch(() => { if (active) setInstalledApps(APP_CATALOG.map(item => ({ name: item.label, packageName: item.packageName, id: item.id, webUrl: item.webUrl, platform: 'web' }))); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => () => {
+    audioRef.current?.pause();
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+  }, []);
+
+
+  const speakText = async (text) => {
+    if (!fishApiKey.trim()) throw new Error('Add a Fish Audio API key in Settings to enable this voice.');
+    const cleanText = String(text || '').trim().slice(0, 3500);
+    if (!cleanText) throw new Error('There is no text to speak.');
+
+    setVoiceStatus('GENERATING SPEECH');
+    const response = await fetch('https://api.fish.audio/v1/tts', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + fishApiKey.trim(),
+        'Content-Type': 'application/json',
+        'model': FISH_AUDIO_MODEL,
+      },
+      body: JSON.stringify({
+        text: cleanText,
+        reference_id: voiceModelId.trim() || DEFAULT_FISH_VOICE_ID,
+        format: 'mp3',
+      }),
+    });
+
+    if (!response.ok) {
+      const detailText = await response.text().catch(() => '');
+      let detail = detailText;
+      try {
+        const parsed = JSON.parse(detailText);
+        detail = parsed?.message || parsed?.error?.message || detailText;
+      } catch {}
+      throw new Error(detail ? 'Fish Audio returned HTTP ' + response.status + ': ' + String(detail).slice(0, 220) : 'Fish Audio returned HTTP ' + response.status + '.');
+    }
+
+    const audioBlob = await response.blob();
+    if (!audioBlob.size) throw new Error('Fish Audio returned an empty audio file.');
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+    }
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+
+    const objectUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(objectUrl);
+    audioUrlRef.current = objectUrl;
+    audioRef.current = audio;
+    audio.onended = () => {
+      if (audioRef.current === audio) setVoiceStatus('VOICE READY');
+      URL.revokeObjectURL(objectUrl);
+      if (audioUrlRef.current === objectUrl) audioUrlRef.current = null;
+    };
+    audio.onerror = () => {
+      if (audioRef.current === audio) setVoiceStatus('AUDIO PLAYBACK ERROR');
+      URL.revokeObjectURL(objectUrl);
+      if (audioUrlRef.current === objectUrl) audioUrlRef.current = null;
+    };
+    await audio.play();
+    setVoiceStatus('SPEAKING');
+  };
+
+  const testVoice = async () => {
+    try {
+      await speakText('Hello. JARVIS voice system is online. How can I help you today?');
+    } catch (error) {
+      setVoiceStatus('VOICE ERROR');
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        text: 'I could not play the Fish Audio voice: ' + (error?.message || 'Unknown error') + '. Check your Fish Audio key, voice ID, network connection, and account usage.',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }]);
+    }
+  };
+
+  const speakResponse = text => {
+    if (!speakResponses || !fishApiKey.trim()) return;
+    void speakText(text).catch(error => {
+      setVoiceStatus('VOICE ERROR');
+      console.error('Fish Audio speech failed:', error?.message || error);
+    });
+  };
 
   const sendMessage = async (text = input) => {
     const clean = text.trim();
@@ -321,7 +525,7 @@ export default function App() {
             result = { success: false, message: 'JARVIS limits each message to two actions.' };
           } else {
             try {
-              result = await runAssistantTool(toolCall, clean);
+              result = await runAssistantTool(toolCall, clean, installedApps);
             } catch (error) {
               result = { success: false, message: 'Action failed: ' + (error?.message || 'Unknown error') };
             }
@@ -349,6 +553,7 @@ export default function App() {
         text: answer,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }]);
+      speakResponse(answer);
     } catch (error) {
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -365,7 +570,8 @@ export default function App() {
     if (actionInProgress) return;
     setActionInProgress(appId);
     try {
-      const result = await openAppById(appId);
+      const shortcut = APP_CATALOG.find(item => item.id === appId);
+      const result = await launchInstalledApp(shortcut?.label || appId, installedApps);
       setStatus(result.success ? 'DEVICE ACTION COMPLETE' : 'DEVICE ACTION UNAVAILABLE');
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -458,9 +664,9 @@ export default function App() {
       <div className="device-actions-head">
         <div>
           <div className="eyebrow"><span className="eyebrow-line" /> DEVICE ACTIONS</div>
-          <p>{isAndroidApp ? 'Tap an app to open it on your phone. If it is not installed, JARVIS may open its website.' : 'In the browser and Windows builds, these shortcuts open web versions. Install the Android APK for native app launching.'}</p>
+          <p>{isAndroidApp ? 'Ask JARVIS to open any launchable app by name. The installed-app list stays on your phone and is not sent to the AI provider.' : isDesktopApp ? 'Ask JARVIS to open an app by name. Windows launching is limited to Start menu apps; JARVIS will not run arbitrary shell commands.' : 'Install the Android APK or Windows app for prompt-based launch of installed apps.'}</p>
         </div>
-        <span className="device-mode">{isAndroidApp ? 'ANDROID BRIDGE READY' : 'WEB LINKS ONLY'}</span>
+        <span className="device-mode">{isAndroidApp ? 'ANDROID APP CONTROL' : isDesktopApp ? 'WINDOWS APP CONTROL' : 'WEB LINKS ONLY'}{installedApps.length ? ' · ' + installedApps.length + ' APPS' : ''}</span>
       </div>
       <div className="app-shortcuts">
         {APP_CATALOG.map(app => <button className="app-shortcut" type="button" key={app.id} disabled={Boolean(actionInProgress)} onClick={() => launchFromShortcut(app.id)}>
@@ -491,14 +697,23 @@ export default function App() {
     {settingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}>
       <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div className="modal-head"><div><span className="eyebrow">CONNECTION CONTROL</span><h2 id="settings-title">Configure AI link</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></div>
-        <p className="modal-copy">Choose Groq or OpenAI API. Keys stay in this app's memory only and are cleared when JARVIS closes or reloads. OpenAI API is not the same as this ChatGPT conversation and uses separate API billing.</p>
+        <p className="modal-copy">Choose Groq or OpenAI for chat. You can also connect Fish Audio for JARVIS speech. Keys stay in memory only and are cleared when JARVIS closes or reloads. OpenAI API is separate from your ChatGPT plan.</p>
         <label>AI PROVIDER <select value={provider} onChange={e => { const nextProvider = e.target.value; setProvider(nextProvider); setModel(nextProvider === 'openai' ? OPENAI_DEFAULT_MODEL : DEFAULT_MODEL); setShowConnectHint(false); }}><option value="groq">Groq API</option><option value="openai">OpenAI API</option></select></label>
         <label>{provider === 'openai' ? 'OPENAI API KEY' : 'GROQ API KEY'} <input type="password" autoComplete="off" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={provider === 'openai' ? 'Paste your OpenAI Platform API key' : 'Paste your Groq API key'} /></label>
         <p className="provider-help"><a href={provider === 'openai' ? 'https://platform.openai.com/api-keys' : 'https://console.groq.com/keys'} target="_blank" rel="noreferrer">Get {provider === 'openai' ? 'an OpenAI API key' : 'a Groq API key'} ↗</a>{provider === 'openai' ? ' API use is billed separately from ChatGPT plans.' : ' Check your provider usage limits.'}</p>
         <label>MODEL <input value={model} onChange={e => setModel(e.target.value)} placeholder={provider === 'openai' ? OPENAI_DEFAULT_MODEL : DEFAULT_MODEL} /></label>
-        <div className="security-note"><ShieldCheck size={18} /><span><strong>Memory-only credential.</strong> The key is sent directly to the selected provider over HTTPS. Never commit it to GitHub or share screenshots that reveal it. Anyone who can inspect a running app may still be able to access its key.</span></div>
-        <div className="modal-actions"><button className="secondary-button" onClick={() => { setApiKey(''); setModel(provider === 'openai' ? OPENAI_DEFAULT_MODEL : DEFAULT_MODEL); setStatus('API KEY REQUIRED'); setShowConnectHint(false); }}>Clear key</button><button className="primary-button" onClick={saveSettings}><Check size={16} /> Use Groq</button></div>
-        {showConnectHint && <p className="saved-note">{apiKey.trim() ? 'Groq key is held in memory. Send a message to test the connection.' : 'No key is configured. Add your Groq API key to use AI chat.'}</p>}
+        <div className="security-note"><ShieldCheck size={18} /><span><strong>Memory-only credential.</strong> Chat and approved tools go directly to the selected AI API over HTTPS. Never commit keys to GitHub. Anyone inspecting a running app may still be able to access its key.</span></div>
+        <div className="voice-settings">
+          <div className="eyebrow"><span className="eyebrow-line" /> VOICE OUTPUT</div>
+          <label>FISH AUDIO API KEY <input type="password" autoComplete="off" value={fishApiKey} onChange={e => setFishApiKey(e.target.value)} placeholder="Paste your Fish Audio API key" /></label>
+          <p className="provider-help"><a href="https://fish.audio/developers/" target="_blank" rel="noreferrer">Fish Audio developer portal ↗</a> Text from JARVIS replies is sent to Fish Audio to create speech.</p>
+          <label>FISH AUDIO VOICE ID <input value={voiceModelId} onChange={e => setVoiceModelId(e.target.value)} placeholder={DEFAULT_FISH_VOICE_ID} /></label>
+          <label className="voice-toggle"><input type="checkbox" checked={speakResponses} onChange={e => setSpeakResponses(e.target.checked)} /> Speak JARVIS responses aloud automatically</label>
+          <div className="voice-actions"><span>STATUS: {voiceStatus}</span><button className="secondary-button" disabled={!fishApiKey.trim()} onClick={testVoice}>Test voice</button><button className="secondary-button" onClick={() => { setFishApiKey(''); setVoiceStatus('FISH AUDIO KEY REQUIRED'); }}>Clear voice key</button></div>
+          <div className="security-note"><ShieldCheck size={18} /><span><strong>Voice privacy and usage.</strong> The selected voice ID and reply text are sent to Fish Audio to generate speech. Your Fish Audio key remains in app memory; usage limits or charges may apply.</span></div>
+        </div>
+        <div className="modal-actions"><button className="secondary-button" onClick={() => { setApiKey(''); setModel(provider === 'openai' ? OPENAI_DEFAULT_MODEL : DEFAULT_MODEL); setStatus('API KEY REQUIRED'); setShowConnectHint(false); }}>Clear AI key</button><button className="primary-button" onClick={saveSettings}><Check size={16} /> {provider === 'openai' ? 'Use OpenAI' : 'Use Groq'}</button></div>
+        {showConnectHint && <p className="saved-note">{apiKey.trim() ? provider === 'openai' ? 'OpenAI key is held in memory. Send a message to test the connection.' : 'Groq key is held in memory. Send a message to test the connection.' : 'No AI key is configured. Add a provider API key to use chat.'}</p>}
       </section>
     </div>}
   </main>;
