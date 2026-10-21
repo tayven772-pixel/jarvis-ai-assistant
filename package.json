@@ -26,6 +26,7 @@
     "concurrently": "^9.1.2",
     "electron": "^35.0.0",
     "electron-builder": "^26.0.12",
+    "typescript": "^5.7.3",
     "vite": "^6.0.7",
     "wait-on": "^8.0.3"
   },
