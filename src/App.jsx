@@ -100,7 +100,7 @@ const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'create_calendar_event',
-      description: 'Create an event directly in the Android calendar when the user asks to add, schedule, or remind them about something. For a date without a time, create an all-day event. Default reminder is 900 minutes before the event (9 AM the previous day for an all-day event); ask a follow-up if the date or title is unclear. Android will request calendar permission if needed.',
+      description: 'Create an event directly in the Android calendar when the user asks to add, schedule, or remind them about something. If no time is provided, create an all-day event with a default 900-minute reminder. Ask for missing important details.',
       parameters: {
         type: 'object',
         properties: {
@@ -167,7 +167,12 @@ const AI_TOOLS = [
 const SYSTEM_PROMPT = [
   'You are J.A.R.V.I.S., a helpful personal AI assistant. Be clear, capable, and concise.',
   'You can use the app-launch tool to open installed apps by their visible name. JARVIS resolves the requested app locally; it does not send the full installed-app list to the AI provider.',
-  'On Android, you can create calendar events directly using the calendar tool. For requests like reminders, choose a clear title and date; if no time is given, make an all-day event with a 900-minute reminder by default. Ask the user when an important detail is unclear. Android may ask for calendar permission, and you must report the actual tool result without claiming an event or notification exists unless confirmed.',
+
+  'For a multi-step task explicitly requested by the user, you may inspect the screen, tap relevant non-consequential controls, and type user-provided text into the intended field as needed. Do not require the user to say tap or type for every step. Use one action at a time and inspect the result before continuing.',
+  'Messaging workflow: you may open the requested app and conversation, type the exact message the user asked for, and leave it ready for review. Never press Send, Enter-to-send, Submit, or Post automatically. Tell the user the draft is ready and ask them to review and send it themselves. Do not guess recipients when ambiguous.',
+  'For file tasks, inspect available labels and use the device file picker when available; never delete, overwrite, upload, or share a file without explicit confirmation.',
+  'On Android, you can create calendar events directly using the calendar tool. If no time is given, use an all-day event with a 900-minute reminder. Report the actual result and never claim it succeeded unless confirmed.',
+
   'Call action tools only when the user clearly and directly asks for that action. Never claim an action succeeded until the app tool result says it succeeded.',
   'On Android, if JARVIS Screen Control is explicitly enabled by the user in Android Accessibility settings, you can inspect visible accessibility labels, tap a labelled control, type into a focused non-password field, scroll, and use Back/Home/Recents. Screen labels read by a requested screen action are sent to the selected AI provider to reason about the task; password fields are excluded. Some unlabeled or protected UI cannot be controlled.',
   'Never tap Send, Submit, Delete, Buy, Pay, Confirm, or other consequential controls; ask the user to perform or explicitly confirm that final step themselves. Never access passwords, one-time codes, or payment details. Do not claim a screen action worked unless its tool result says it succeeded.',
@@ -889,14 +894,14 @@ export default function App() {
   </main>;
 }
  },
-          time: { type: 'string', description: 'Local 24-hour time HH:mm, or empty string for an all-day event.' },
+          time: { type: 'string', maxLength: 5 },
           all_day: { type: 'boolean' },
-          reminder_minutes: { type: 'integer', minimum: -1, maximum: 40320, description: '-1 means no reminder; otherwise minutes before the event. Default 900.' }
+          reminder_minutes: { type: 'integer', minimum: -1, maximum: 40320 }
         },
         required: ['title', 'date', 'time', 'all_day', 'reminder_minutes'],
-        additionalProperties: false,
-      },
-    },
+        additionalProperties: false
+      }
+    }
   },
   {
     type: 'function',
