@@ -360,7 +360,7 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
       return await AppControl.createCalendarEvent({ title, date, time, allDay, reminderMinutes });
     }
     case 'inspect_screen': {
-      if (!/\\b(inspect|read|look at|what is on|what's on|see|check|tap|click|press|select|type|enter|scroll|swipe)\\b/i.test(userRequest)) {
+      if (!/\b(inspect|read|look at|what is on|what's on|see|check|tap|click|press|select|type|enter|scroll|swipe|open|message|text|chat|find|search|draft|create|start|send)\b/i.test(userRequest)) {
         return { success: false, message: 'Not executed: the user did not clearly ask JARVIS to inspect the screen.' };
       }
       if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Screen inspection is currently available in the Android app only.' };
@@ -368,7 +368,7 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
       return { success: true, screen: result, message: result.message + ' Visible labels will be sent to the selected AI provider for this requested task.' };
     }
     case 'tap_text': {
-      if (!/\\b(tap|click|press|select)\\b/i.test(userRequest)) return { success: false, message: 'Not executed: explicitly ask JARVIS to tap, click, press, or select a control.' };
+      if (!/\b(tap|click|press|select|open|message|text|chat|find|search|draft|create|start|send|navigate|go to)\b/i.test(userRequest)) return { success: false, message: 'Not executed: the user did not request an app or screen task.' };
       if (/\\b(send|submit|delete|remove|buy|purchase|pay|confirm|transfer|post|publish|place order|call|dial)\\b/i.test(args.text || '')) {
         return { success: false, message: 'Safety pause: I will not activate a consequential control automatically. Please review the screen and perform that final action yourself.' };
       }
@@ -376,12 +376,12 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
       return await AppControl.tapText({ text: String(args.text || '').slice(0, 180) });
     }
     case 'type_text': {
-      if (!/\\b(type|enter|write|fill in|put)\\b/i.test(userRequest)) return { success: false, message: 'Not executed: the user did not clearly ask JARVIS to type text.' };
+      if (!/\b(type|enter|write|fill in|put|message|text|draft|reply|chat|send)\b/i.test(userRequest)) return { success: false, message: 'Not executed: the user did not request text entry or a message draft.' };
       if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Screen typing is currently available in the Android app only.' };
       return await AppControl.typeText({ text: String(args.text || '').slice(0, 2000) });
     }
     case 'scroll_screen': {
-      if (!/\\b(scroll|swipe)\\b/i.test(userRequest)) return { success: false, message: 'Not executed: the user did not clearly ask JARVIS to scroll.' };
+      if (!/\b(scroll|swipe|find|search|message|chat|navigate|look for)\b/i.test(userRequest)) return { success: false, message: 'Not executed: the user did not request navigation or scrolling.' };
       if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Screen scrolling is currently available in the Android app only.' };
       return await AppControl.scrollScreen({ direction: args.direction });
     }
