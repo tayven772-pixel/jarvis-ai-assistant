@@ -4,9 +4,10 @@ A standalone J.A.R.V.I.S.-inspired assistant project, completely separate from M
 
 ## Current starter
 - Responsive blue holographic dashboard
-- Chat-style assistant interface with local demo responses
-- Voice input through browser speech recognition where supported
-- Configurable AI integration is planned; the prototype does not call an AI API by default
+- Responsive JARVIS-style chat interface and voice input where supported
+- Direct Groq chat-completions connection using a key entered by the user
+- The Groq API key is kept in application memory only and is not written to browser storage
+- The default model can be changed in Settings; available models depend on Groq's current model catalogue
 - Device actions remain disabled until implemented with clear permissions and confirmations
 
 ## Run locally
