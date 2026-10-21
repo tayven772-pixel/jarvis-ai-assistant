@@ -9,6 +9,10 @@ if not manifest.exists():
 
 content = manifest.read_text(encoding="utf-8")
 permission = '    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />'
+calendar_permission = '    <uses-permission android:name="android.permission.READ_CALENDAR" />\n    <uses-permission android:name="android.permission.WRITE_CALENDAR" />'
+if "android.permission.READ_CALENDAR" not in content:
+    content = content.replace("    <application", calendar_permission + "\n    <application", 1)
+
 if "android.permission.QUERY_ALL_PACKAGES" not in content:
     if "    <queries>" in content:
         content = content.replace("    <queries>", permission + "\n    <queries>", 1)
@@ -85,14 +89,25 @@ public class MainActivity extends BridgeActivity {
 
 (package_dir / "AppControlPlugin.java").write_text("""package com.metacode.jarvisassistant;
 
+import android.Manifest;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.provider.CalendarContract;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.TimeZone;
 import android.content.pm.ResolveInfo;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.PermissionCallback;
+import com.getcapacitor.PermissionState;
+import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -101,7 +116,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@CapacitorPlugin(name = "AppControl")
+@CapacitorPlugin(name = "AppControl", permissions = { @Permission(alias = "calendar", strings = { Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR }) })
 public class AppControlPlugin extends Plugin {
     private Map<String, String> getLaunchablePackages() {
         PackageManager manager = getContext().getPackageManager();
@@ -143,6 +158,117 @@ public class AppControlPlugin extends Plugin {
         }
     }
 
+
+    @PluginMethod
+    public void createCalendarEvent(PluginCall call) {
+        if (getPermissionState("calendar") != PermissionState.GRANTED) {
+            requestPermissionForAlias("calendar", call, "calendarPermissionCallback");
+            return;
+        }
+        insertCalendarEvent(call);
+    }
+
+    @PermissionCallback
+    private void calendarPermissionCallback(PluginCall call) {
+        if (getPermissionState("calendar") == PermissionState.GRANTED) {
+            insertCalendarEvent(call);
+        } else {
+            call.resolve(new JSObject().put("success", false).put("message", "Calendar permission was not granted, so no event was created."));
+        }
+    }
+
+    private void insertCalendarEvent(PluginCall call) {
+        String title = call.getString("title", "").trim();
+        String dateText = call.getString("date", "");
+        String timeText = call.getString("time", "");
+        boolean allDay = call.getBoolean("allDay", true) || timeText.trim().isEmpty();
+        int reminderMinutes = call.getInt("reminderMinutes", 900);
+        if (title.isEmpty() || title.length() > 180 || !dateText.matches("\\d{4}-\\d{2}-\\d{2}")) {
+            call.resolve(new JSObject().put("success", false).put("message", "Provide an event title and date in YYYY-MM-DD format."));
+            return;
+        }
+        if (reminderMinutes < -1 || reminderMinutes > 40320) {
+            call.resolve(new JSObject().put("success", false).put("message", "Reminder must be between 0 and 40320 minutes, or -1 for no reminder."));
+            return;
+        }
+        try {
+            long startMillis;
+            long endMillis;
+            String eventTimezone;
+            if (allDay) {
+                SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
+                format.setLenient(false);
+                format.setTimeZone(TimeZone.getTimeZone("UTC"));
+                Date startDate = format.parse(dateText);
+                if (startDate == null) throw new ParseException("Invalid date", 0);
+                startMillis = startDate.getTime();
+                endMillis = startMillis + 24L * 60L * 60L * 1000L;
+                eventTimezone = "UTC";
+            } else {
+                if (!timeText.matches("\\d{2}:\\d{2}")) {
+                    call.resolve(new JSObject().put("success", false).put("message", "Provide time in 24-hour HH:mm format."));
+                    return;
+                }
+                SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US);
+                format.setLenient(false);
+                Date startDate = format.parse(dateText + " " + timeText);
+                if (startDate == null) throw new ParseException("Invalid date or time", 0);
+                startMillis = startDate.getTime();
+                endMillis = startMillis + 30L * 60L * 1000L;
+                eventTimezone = TimeZone.getDefault().getID();
+            }
+
+            String[] projection = { CalendarContract.Calendars._ID };
+            String selection = CalendarContract.Calendars.VISIBLE + "=? AND " + CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL + ">=?";
+            String[] selectionArgs = { "1", String.valueOf(CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) };
+            long calendarId = -1;
+            try (Cursor cursor = getContext().getContentResolver().query(
+                    CalendarContract.Calendars.CONTENT_URI, projection, selection, selectionArgs,
+                    CalendarContract.Calendars.IS_PRIMARY + " DESC, " + CalendarContract.Calendars._ID + " ASC")) {
+                if (cursor != null && cursor.moveToFirst()) calendarId = cursor.getLong(0);
+            }
+            if (calendarId < 0) {
+                call.resolve(new JSObject().put("success", false).put("message", "No writable calendar was found. Add or enable a calendar in your Calendar app first."));
+                return;
+            }
+
+            ContentValues values = new ContentValues();
+            values.put(CalendarContract.Events.CALENDAR_ID, calendarId);
+            values.put(CalendarContract.Events.TITLE, title);
+            values.put(CalendarContract.Events.DTSTART, startMillis);
+            values.put(CalendarContract.Events.DTEND, endMillis);
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, eventTimezone);
+            values.put(CalendarContract.Events.ALL_DAY, allDay ? 1 : 0);
+            values.put(CalendarContract.Events.HAS_ALARM, reminderMinutes >= 0 ? 1 : 0);
+            android.net.Uri eventUri = getContext().getContentResolver().insert(CalendarContract.Events.CONTENT_URI, values);
+            if (eventUri == null) {
+                call.resolve(new JSObject().put("success", false).put("message", "Android did not create the calendar event."));
+                return;
+            }
+
+            boolean reminderCreated = reminderMinutes < 0;
+            if (reminderMinutes >= 0) {
+                long eventId = Long.parseLong(eventUri.getLastPathSegment());
+                ContentValues reminder = new ContentValues();
+                reminder.put(CalendarContract.Reminders.EVENT_ID, eventId);
+                reminder.put(CalendarContract.Reminders.MINUTES, reminderMinutes);
+                reminder.put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT);
+                reminderCreated = getContext().getContentResolver().insert(CalendarContract.Reminders.CONTENT_URI, reminder) != null;
+            }
+            JSObject result = new JSObject();
+            result.put("success", true);
+            result.put("eventId", eventUri.getLastPathSegment());
+            result.put("title", title);
+            result.put("date", dateText);
+            result.put("allDay", allDay);
+            result.put("reminderCreated", reminderCreated);
+            result.put("message", reminderMinutes < 0 ? "Created the calendar event without a reminder."
+                : reminderCreated ? "Created the calendar event and its notification." : "Created the calendar event, but Android did not save its notification.");
+            call.resolve(result);
+        } catch (Exception error) {
+            call.resolve(new JSObject().put("success", false).put("message", "Calendar event creation failed: " + error.getMessage()));
+        }
+    }
 
     @PluginMethod
     public void accessibilityStatus(PluginCall call) {
