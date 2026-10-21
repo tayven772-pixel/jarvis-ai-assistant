@@ -335,7 +335,7 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
       return await openExternalUrl(url);
     }
     case 'inspect_screen': {
-      if (!/\\b(inspect|read|look at|what is on|what's on|see|check)\\b/i.test(userRequest)) {
+      if (!/\\b(inspect|read|look at|what is on|what's on|see|check|tap|click|press|select|type|enter|scroll|swipe)\\b/i.test(userRequest)) {
         return { success: false, message: 'Not executed: the user did not clearly ask JARVIS to inspect the screen.' };
       }
       if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Screen inspection is currently available in the Android app only.' };
