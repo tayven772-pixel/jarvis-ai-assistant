@@ -455,6 +455,14 @@ public class JarvisAccessibilityService extends AccessibilityService {
                 item.put("editable", node.isEditable());
                 item.put("className", String.valueOf(node.getClassName()));
                 item.put("viewId", String.valueOf(node.getViewIdResourceName()));
+                android.graphics.Rect bounds = new android.graphics.Rect();
+                node.getBoundsInScreen(bounds);
+                JSObject box = new JSObject();
+                box.put("left", bounds.left);
+                box.put("top", bounds.top);
+                box.put("right", bounds.right);
+                box.put("bottom", bounds.bottom);
+                item.put("bounds", box);
                 out.put(item);
             }
         }
@@ -469,8 +477,13 @@ public class JarvisAccessibilityService extends AccessibilityService {
         if (!node.isPassword()) {
             String text = node.getText() == null ? "" : node.getText().toString().trim();
             String desc = node.getContentDescription() == null ? "" : node.getContentDescription().toString().trim();
-            if ((text.equalsIgnoreCase(target) || desc.equalsIgnoreCase(target))
-                    && node.isClickable() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+            if (text.equalsIgnoreCase(target) || desc.equalsIgnoreCase(target)) {
+                AccessibilityNodeInfo candidate = node;
+                for (int depth = 0; candidate != null && depth < 5; depth++) {
+                    if (candidate.isClickable() && candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+                    candidate = candidate.getParent();
+                }
+            }
         }
         for (int i = 0; i < node.getChildCount(); i++) {
             if (clickMatching(node.getChild(i), target)) return true;
