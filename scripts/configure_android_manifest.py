@@ -183,7 +183,7 @@ public class AppControlPlugin extends Plugin {
         String timeText = call.getString("time", "");
         boolean allDay = call.getBoolean("allDay", true) || timeText.trim().isEmpty();
         int reminderMinutes = call.getInt("reminderMinutes", 900);
-        if (title.isEmpty() || title.length() > 180 || !dateText.matches("\\d{4}-\\d{2}-\\d{2}")) {
+        if (title.isEmpty() || title.length() > 180 || !dateText.matches("\\\\d{4}-\\\\d{2}-\\\\d{2}")) {
             call.resolve(new JSObject().put("success", false).put("message", "Provide an event title and date in YYYY-MM-DD format."));
             return;
         }
@@ -205,7 +205,7 @@ public class AppControlPlugin extends Plugin {
                 endMillis = startMillis + 24L * 60L * 60L * 1000L;
                 eventTimezone = "UTC";
             } else {
-                if (!timeText.matches("\\d{2}:\\d{2}")) {
+                if (!timeText.matches("\\\\d{2}:\\\\d{2}")) {
                     call.resolve(new JSObject().put("success", false).put("message", "Provide time in 24-hour HH:mm format."));
                     return;
                 }
