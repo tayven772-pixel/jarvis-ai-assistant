@@ -510,16 +510,15 @@ export default function App() {
     if (provider === 'omniroute' && !/^https?:\/\//i.test(baseUrl)) {
       setMessages(prev => [...prev, { role: 'assistant', text: 'Omniroute needs a valid local or trusted network base URL, such as http://127.0.0.1:20128/v1. Do not expose an unauthenticated Omniroute endpoint to the public internet.', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
       setStatus('OMNIROUTE URL REQUIRED');
+      setSending(false);
       return;
     }
     const selectedModel = model.trim() || (provider === 'openai' ? OPENAI_DEFAULT_MODEL : DEFAULT_MODEL);
 
     const requestCompletion = async (apiMessages, allowTools) => {
-      const body = {
-        model: selectedModel,
-        messages: apiMessages,
-        max_completion_tokens: 1200,
-      };
+      const body = { model: selectedModel, messages: apiMessages };
+      if (provider === 'omniroute') body.max_tokens = 1200;
+      else body.max_completion_tokens = 1200;
       if (provider === 'groq') body.temperature = 0.7;
       if (allowTools) {
         body.tools = AI_TOOLS;
@@ -732,7 +731,8 @@ export default function App() {
         <div className="eyebrow"><span className="eyebrow-line" /> QUICK COMMANDS</div>
         <button className="quick-command" onClick={() => sendMessage('Give me a system status summary')}><Activity size={16} /><span>System status</span><span className="command-arrow">↗</span></button>
         <button className="quick-command" onClick={() => sendMessage('Start a coding workspace session. Ask what repository or files I want to work on, then help plan, write, review, and debug code. Do not claim to edit files unless a connected tool actually does so.')}><Command size={16} /><span>Coding workspace</span><span className="command-arrow">↗</span></button>
-        <button className="quick-command" onClick={() => sendMessage('Explain the available voice features')}><Headphones size={16} /><span>Voice interface</span><span className="command-arrow">↗</span></button>
+        <button className="quick-command" onClick={() => sendMessage('Help me create a reminder. Ask for the title and date, and on Android use the calendar event tool only after the details are clear.')}><Activity size={16} /><span>Plan a reminder</span><span className="command-arrow">↗</span></button>
+      <button className="quick-command" onClick={() => sendMessage('Explain the available voice features')}><Headphones size={16} /><span>Voice interface</span><span className="command-arrow">↗</span></button>
         <div className="side-foot"><span className="pulse-small" /> SECURE SESSION <span>·</span> LOCAL UI</div>
       </aside>
 
