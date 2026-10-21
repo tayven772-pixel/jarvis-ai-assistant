@@ -44,124 +44,16 @@ const WEB_DESTINATIONS = {
 };
 
 const AI_TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'open_app',
-      description: 'Launch an installed app by its visible name, only when the user clearly asks to open or launch it. JARVIS resolves the name locally against installed apps.',
-      parameters: {
-        type: 'object',
-        properties: { app_name: { type: 'string', minLength: 1, maxLength: 120, description: 'The visible app name, such as Calculator, Discord, or Chrome.' } },
-        required: ['app_name'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'open_website',
-      description: 'Open one of the pre-approved website destinations only when the user asks to open or visit it.',
-      parameters: {
-        type: 'object',
-        properties: { site: { type: 'string', enum: Object.keys(WEB_DESTINATIONS) } },
-        required: ['site'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'search_web',
-      description: 'Open a Google search for a query only when the user explicitly asks to search or look something up online. This opens a browser page; it does not read the results.',
-      parameters: {
-        type: 'object',
-        properties: { query: { type: 'string', minLength: 1, maxLength: 240 } },
-        required: ['query'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'copy_text',
-      description: 'Copy text to the local clipboard only when the user explicitly asks to copy it.',
-      parameters: {
-        type: 'object',
-        properties: { text: { type: 'string', minLength: 1, maxLength: 12000 } },
-        required: ['text'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'create_calendar_event',
-      description: 'Create an event directly in the Android calendar when the user asks to add, schedule, or remind them about something. If no time is provided, create an all-day event with a default 900-minute reminder. Ask for missing important details.',
-      parameters: {
-        type: 'object',
-        properties: {
-          title: { type: 'string', minLength: 1, maxLength: 180 },
-          date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}
-      description: 'Read visible accessibility labels and controls on the current Android screen only when the user asks what is on screen, asks JARVIS to inspect/read the screen, or requests a task that requires looking at the current screen.',
-      parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'tap_text',
-      description: 'Tap a visible Android control by its exact on-screen text or accessibility label, only when the user explicitly asks to tap, click, press, or select that control. Never use for Send, Submit, Delete, Buy, Pay, Confirm, or other consequential controls; ask the user to confirm instead.',
-      parameters: {
-        type: 'object',
-        properties: { text: { type: 'string', minLength: 1, maxLength: 180 } },
-        required: ['text'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'type_text',
-      description: 'Enter user-requested text into the currently focused non-password Android text field, only when the user explicitly asks JARVIS to type or enter text. Never infer credentials or secrets.',
-      parameters: {
-        type: 'object',
-        properties: { text: { type: 'string', maxLength: 2000 } },
-        required: ['text'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'scroll_screen',
-      description: 'Scroll the current Android screen up, down, left, or right only when the user explicitly asks to scroll.',
-      parameters: {
-        type: 'object',
-        properties: { direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] } },
-        required: ['direction'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'navigation_action',
-      description: 'Perform Android Back, Home, or Recents navigation only when the user explicitly asks for that navigation action.',
-      parameters: {
-        type: 'object',
-        properties: { action: { type: 'string', enum: ['back', 'home', 'recents'] } },
-        required: ['action'],
-        additionalProperties: false,
-      },
-    },
-  },
+  { type: 'function', function: { name: 'open_app', description: 'Launch an installed app by its visible name when the user asks to open it.', parameters: { type: 'object', properties: { app_name: { type: 'string', minLength: 1, maxLength: 120 } }, required: ['app_name'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'open_website', description: 'Open an approved website when the user asks to visit it.', parameters: { type: 'object', properties: { site: { type: 'string', enum: Object.keys(WEB_DESTINATIONS) } }, required: ['site'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'search_web', description: 'Open a Google search when the user asks to search online. This does not read results.', parameters: { type: 'object', properties: { query: { type: 'string', minLength: 1, maxLength: 240 } }, required: ['query'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'copy_text', description: 'Copy text only when the user explicitly asks to copy it.', parameters: { type: 'object', properties: { text: { type: 'string', minLength: 1, maxLength: 12000 } }, required: ['text'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'create_calendar_event', description: 'Create an Android calendar event for a clear user request. If no time is given, use an all-day event and a 900-minute reminder. Ask for missing details.', parameters: { type: 'object', properties: { title: { type: 'string', minLength: 1, maxLength: 180 }, date: { type: 'string', description: 'Date in YYYY-MM-DD format' }, time: { type: 'string', description: 'Local 24-hour HH:mm time, or empty for all-day' }, all_day: { type: 'boolean' }, reminder_minutes: { type: 'integer', minimum: -1, maximum: 40320 } }, required: ['title', 'date', 'time', 'all_day', 'reminder_minutes'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'inspect_screen', description: 'Inspect visible labels and controls on the current Android screen when a requested task needs it.', parameters: { type: 'object', properties: {}, required: [], additionalProperties: false } } },
+  { type: 'function', function: { name: 'tap_text', description: 'Tap a visible Android control by its exact label as a step in the user-requested task. Never tap Send, Submit, Delete, Buy, Pay, Confirm, Post, Publish, or other consequential controls; leave those for user review.', parameters: { type: 'object', properties: { text: { type: 'string', minLength: 1, maxLength: 180 } }, required: ['text'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'type_text', description: 'Type user-requested text into the currently focused non-password Android field as part of the requested task. Never infer credentials or secrets.', parameters: { type: 'object', properties: { text: { type: 'string', maxLength: 2000 } }, required: ['text'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'scroll_screen', description: 'Scroll the Android screen in a requested direction.', parameters: { type: 'object', properties: { direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] } }, required: ['direction'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'navigation_action', description: 'Use Android Back, Home, or Recents when the user asks.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['back', 'home', 'recents'] } }, required: ['action'], additionalProperties: false } } },
 ];
 
 const SYSTEM_PROMPT = [
