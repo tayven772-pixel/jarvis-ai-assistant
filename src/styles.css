@@ -42,3 +42,6 @@
 .screen-control-copy span{font-size:10px;line-height:1.55;color:#7899b4}
 .screen-control-row .primary-button{flex-shrink:0;white-space:nowrap}
 @media(max-width:680px){.screen-control-row{align-items:stretch;flex-direction:column;gap:12px}.screen-control-row .primary-button{width:100%}}
+
+
+.settings-modal textarea{display:block;width:100%;resize:vertical;min-height:82px;margin-top:8px;background:#050d1a;border:1px solid rgba(81,157,205,.27);padding:12px;color:#d7efff;font:inherit;font-size:11px;line-height:1.55}.settings-modal textarea::placeholder{color:#55758f}.settings-modal .field-help{display:block;margin-top:7px;color:#7192ad;font-size:9px;line-height:1.5;letter-spacing:normal}
