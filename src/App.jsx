@@ -342,7 +342,7 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
       return await openExternalUrl(url);
     }
     case 'create_calendar_event': {
-      if (!/\\b(create|add|schedule|set up|remind|reminder|calendar|event)\\b/i.test(userRequest)) {
+      if (!/\b(create|add|schedule|set up|remind|reminder|calendar|event)\b/i.test(userRequest)) {
         return { success: false, message: 'Not executed: ask JARVIS to create or schedule a calendar event or reminder.' };
       }
       if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Direct calendar creation is currently available in the Android app only.' };
@@ -351,7 +351,7 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
       const time = String(args.time || '');
       const allDay = Boolean(args.all_day) || !time;
       const reminderMinutes = Number.isInteger(args.reminder_minutes) ? args.reminder_minutes : 900;
-      if (!title || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) return { success: false, message: 'The event needs a clear title and date. Ask the user for missing details instead of guessing.' };
+      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { success: false, message: 'The event needs a clear title and date. Ask the user for missing details instead of guessing.' };
       return await AppControl.createCalendarEvent({ title, date, time, allDay, reminderMinutes });
     }
     case 'inspect_screen': {
