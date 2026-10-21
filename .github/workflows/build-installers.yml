@@ -11,6 +11,7 @@ on:
       - "package-lock.json"
       - "capacitor.config.ts"
       - "vite.config.js"
+      - "scripts/**"
       - ".github/workflows/build-installers.yml"
 
 permissions:
@@ -65,6 +66,8 @@ jobs:
       - run: npm install
       - run: npm run build
       - run: npx cap add android
+      - name: Configure Android app visibility for supported shortcuts
+        run: python scripts/configure_android_manifest.py
       - run: npx cap sync android
       - name: Build debug APK
         working-directory: android
