@@ -45,6 +45,26 @@ for package in packages:
             raise SystemExit(1)
         content = content.replace(marker, block + marker, 1)
 
+
+# Register the user-enabled accessibility service. Android requires the user to
+# explicitly enable this in Settings; the app never enables it silently.
+service_decl = '''
+        <service
+            android:name=".JarvisAccessibilityService"
+            android:label="JARVIS Screen Control"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/jarvis_accessibility_service" />
+        </service>
+'''
+if "JarvisAccessibilityService" not in content:
+    content = content.replace("</application>", service_decl + "\n    </application>", 1)
+
 manifest.write_text(content, encoding="utf-8")
 
 package_dir = Path("android/app/src/main/java/com/metacode/jarvisassistant")
@@ -123,6 +143,79 @@ public class AppControlPlugin extends Plugin {
         }
     }
 
+
+    @PluginMethod
+    public void accessibilityStatus(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("enabled", JarvisAccessibilityService.isConnected());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void openAccessibilitySettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject result = new JSObject();
+            result.put("success", true);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("Could not open Android Accessibility settings.", "ACCESSIBILITY_SETTINGS_FAILED", error);
+        }
+    }
+
+    @PluginMethod
+    public void inspectScreen(PluginCall call) {
+        JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
+        if (service == null) {
+            call.reject("Enable JARVIS Screen Control in Android Accessibility settings first.", "ACCESSIBILITY_NOT_ENABLED");
+            return;
+        }
+        try { call.resolve(service.inspectScreen()); }
+        catch (Exception error) { call.reject("Could not inspect the current screen.", "SCREEN_INSPECT_FAILED", error); }
+    }
+
+    @PluginMethod
+    public void tapText(PluginCall call) {
+        JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
+        String target = call.getString("text");
+        if (service == null) { call.reject("Enable JARVIS Screen Control in Android Accessibility settings first.", "ACCESSIBILITY_NOT_ENABLED"); return; }
+        if (target == null || target.trim().isEmpty() || target.length() > 180) { call.reject("Provide the visible text to tap.", "INVALID_TARGET"); return; }
+        JSObject result = service.tapText(target.trim());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void typeText(PluginCall call) {
+        JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
+        String value = call.getString("text");
+        if (service == null) { call.reject("Enable JARVIS Screen Control in Android Accessibility settings first.", "ACCESSIBILITY_NOT_ENABLED"); return; }
+        if (value == null || value.length() > 2000) { call.reject("Text must be 2000 characters or fewer.", "INVALID_TEXT"); return; }
+        JSObject result = service.typeText(value);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void scrollScreen(PluginCall call) {
+        JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
+        String direction = call.getString("direction", "down");
+        if (service == null) { call.reject("Enable JARVIS Screen Control in Android Accessibility settings first.", "ACCESSIBILITY_NOT_ENABLED"); return; }
+        if (!"up".equals(direction) && !"down".equals(direction) && !"left".equals(direction) && !"right".equals(direction)) { call.reject("Choose up, down, left, or right.", "INVALID_DIRECTION"); return; }
+        JSObject result = service.scrollScreen(direction);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void navigationAction(PluginCall call) {
+        JarvisAccessibilityService service = JarvisAccessibilityService.getInstance();
+        String action = call.getString("action");
+        if (service == null) { call.reject("Enable JARVIS Screen Control in Android Accessibility settings first.", "ACCESSIBILITY_NOT_ENABLED"); return; }
+        if (!"back".equals(action) && !"home".equals(action) && !"recents".equals(action)) { call.reject("Choose back, home, or recents.", "INVALID_ACTION"); return; }
+        JSObject result = service.navigationAction(action);
+        call.resolve(result);
+    }
+
     @PluginMethod
     public void launchApp(PluginCall call) {
         String packageName = call.getString("packageName");
@@ -154,6 +247,197 @@ public class AppControlPlugin extends Plugin {
         }
     }
 }
+""", encoding="utf-8")
+
+
+(package_dir / "JarvisAccessibilityService.java").write_text("""package com.metacode.jarvisassistant;
+
+import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.os.Bundle;
+import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
+import com.getcapacitor.JSArray;
+import com.getcapacitor.JSObject;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+public class JarvisAccessibilityService extends AccessibilityService {
+    private static volatile JarvisAccessibilityService instance;
+    private static final int MAX_NODES = 100;
+
+    public static JarvisAccessibilityService getInstance() { return instance; }
+    public static boolean isConnected() { return instance != null; }
+
+    @Override public void onServiceConnected() {
+        super.onServiceConnected();
+        instance = this;
+        AccessibilityServiceInfo info = getServiceInfo();
+        if (info != null) {
+            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                | AccessibilityEvent.TYPE_VIEW_SCROLLED;
+            info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
+            info.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+            info.notificationTimeout = 120;
+            setServiceInfo(info);
+        }
+    }
+
+    @Override public void onAccessibilityEvent(AccessibilityEvent event) { }
+    @Override public void onInterrupt() { }
+    @Override public void onDestroy() {
+        if (instance == this) instance = null;
+        super.onDestroy();
+    }
+
+    public JSObject inspectScreen() {
+        JSObject result = new JSObject();
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        JSArray nodes = new JSArray();
+        if (root != null) {
+            int[] count = new int[]{0};
+            appendNodes(root, nodes, count);
+            result.put("packageName", String.valueOf(root.getPackageName()));
+        } else {
+            result.put("packageName", "");
+        }
+        result.put("nodes", nodes);
+        result.put("count", nodes.length());
+        result.put("message", root == null ? "No active accessibility window is available." : "Read visible accessibility labels. Password fields are excluded.");
+        return result;
+    }
+
+    private void appendNodes(AccessibilityNodeInfo node, JSArray out, int[] count) {
+        if (node == null || count[0] >= MAX_NODES) return;
+        count[0]++;
+        if (!node.isPassword()) {
+            CharSequence text = node.getText();
+            CharSequence desc = node.getContentDescription();
+            String label = text != null ? text.toString().trim() : "";
+            String description = desc != null ? desc.toString().trim() : "";
+            if (!label.isEmpty() || !description.isEmpty() || node.isClickable() || node.isEditable()) {
+                JSObject item = new JSObject();
+                item.put("text", label.length() > 220 ? label.substring(0, 220) : label);
+                item.put("description", description.length() > 220 ? description.substring(0, 220) : description);
+                item.put("clickable", node.isClickable());
+                item.put("editable", node.isEditable());
+                item.put("className", String.valueOf(node.getClassName()));
+                item.put("viewId", String.valueOf(node.getViewIdResourceName()));
+                out.put(item);
+            }
+        }
+        for (int i = 0; i < node.getChildCount() && count[0] < MAX_NODES; i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) appendNodes(child, out, count);
+        }
+    }
+
+    private boolean clickMatching(AccessibilityNodeInfo node, String target) {
+        if (node == null) return false;
+        if (!node.isPassword()) {
+            String text = node.getText() == null ? "" : node.getText().toString().trim();
+            String desc = node.getContentDescription() == null ? "" : node.getContentDescription().toString().trim();
+            if ((text.equalsIgnoreCase(target) || desc.equalsIgnoreCase(target))
+                    && node.isClickable() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            if (clickMatching(node.getChild(i), target)) return true;
+        }
+        return false;
+    }
+
+    public JSObject tapText(String target) {
+        JSObject result = new JSObject();
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        boolean success = root != null && clickMatching(root, target);
+        result.put("success", success);
+        result.put("message", success ? "Tapped the visible control labelled " + target + "." : "Could not find a clickable control with that exact visible label. Inspect the screen and use the exact label.");
+        return result;
+    }
+
+    public JSObject typeText(String value) {
+        JSObject result = new JSObject();
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo field = findFocusedEditable(root);
+        if (field == null) {
+            result.put("success", false);
+            result.put("message", "No focused editable text field was found. Tap a text field first.");
+            return result;
+        }
+        Bundle args = new Bundle();
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
+        boolean success = field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+        if (!success) {
+            ClipboardManager clipboard = (ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+            clipboard.setPrimaryClip(ClipData.newPlainText("JARVIS text", value));
+            success = field.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+        }
+        result.put("success", success);
+        result.put("message", success ? "Entered text into the focused field." : "Android rejected text entry into the focused field.");
+        return result;
+    }
+
+    private AccessibilityNodeInfo findFocusedEditable(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if (!node.isPassword() && node.isEditable() && node.isFocused()) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = findFocusedEditable(node.getChild(i));
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    public JSObject scrollScreen(String direction) {
+        JSObject result = new JSObject();
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        int action = "up".equals(direction) ? AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            : "down".equals(direction) ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            : "left".equals(direction) ? AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            : AccessibilityNodeInfo.ACTION_SCROLL_FORWARD;
+        boolean success = scrollFirst(root, action);
+        result.put("success", success);
+        result.put("message", success ? "Scrolled " + direction + "." : "No scrollable control accepted the scroll action.");
+        return result;
+    }
+
+    private boolean scrollFirst(AccessibilityNodeInfo node, int action) {
+        if (node == null) return false;
+        if (node.isScrollable() && node.performAction(action)) return true;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            if (scrollFirst(node.getChild(i), action)) return true;
+        }
+        return false;
+    }
+
+    public JSObject navigationAction(String action) {
+        int global = "back".equals(action) ? GLOBAL_ACTION_BACK
+            : "home".equals(action) ? GLOBAL_ACTION_HOME : GLOBAL_ACTION_RECENTS;
+        boolean success = performGlobalAction(global);
+        JSObject result = new JSObject();
+        result.put("success", success);
+        result.put("message", success ? "Performed Android " + action + " navigation." : "Android did not accept the navigation action.");
+        return result;
+    }
+}
+""", encoding="utf-8")
+
+xml_dir = Path("android/app/src/main/res/xml")
+xml_dir.mkdir(parents=True, exist_ok=True)
+(xml_dir / "jarvis_accessibility_service.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/app_name"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewScrolled"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:notificationTimeout="120"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows" />
 """, encoding="utf-8")
 
 print("Configured JARVIS Android app discovery and launch plugin.")

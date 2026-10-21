@@ -96,13 +96,74 @@ const AI_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'inspect_screen',
+      description: 'Read visible accessibility labels and controls on the current Android screen only when the user asks what is on screen, asks JARVIS to inspect/read the screen, or requests a task that requires looking at the current screen.',
+      parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'tap_text',
+      description: 'Tap a visible Android control by its exact on-screen text or accessibility label, only when the user explicitly asks to tap, click, press, or select that control. Never use for Send, Submit, Delete, Buy, Pay, Confirm, or other consequential controls; ask the user to confirm instead.',
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string', minLength: 1, maxLength: 180 } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'type_text',
+      description: 'Enter user-requested text into the currently focused non-password Android text field, only when the user explicitly asks JARVIS to type or enter text. Never infer credentials or secrets.',
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string', maxLength: 2000 } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'scroll_screen',
+      description: 'Scroll the current Android screen up, down, left, or right only when the user explicitly asks to scroll.',
+      parameters: {
+        type: 'object',
+        properties: { direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] } },
+        required: ['direction'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'navigation_action',
+      description: 'Perform Android Back, Home, or Recents navigation only when the user explicitly asks for that navigation action.',
+      parameters: {
+        type: 'object',
+        properties: { action: { type: 'string', enum: ['back', 'home', 'recents'] } },
+        required: ['action'],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 const SYSTEM_PROMPT = [
   'You are J.A.R.V.I.S., a helpful personal AI assistant. Be clear, capable, and concise.',
   'You can use the app-launch tool to open installed apps by their visible name. JARVIS resolves the requested app locally; it does not send the full installed-app list to the AI provider.',
   'Call action tools only when the user clearly and directly asks for that action. Never claim an action succeeded until the app tool result says it succeeded.',
-  'You cannot execute arbitrary shell commands, run scripts, click or type into arbitrary UI, send messages, place calls, or silently change device settings.',
+  'On Android, if JARVIS Screen Control is explicitly enabled by the user in Android Accessibility settings, you can inspect visible accessibility labels, tap a labelled control, type into a focused non-password field, scroll, and use Back/Home/Recents. Screen labels read by a requested screen action are sent to the selected AI provider to reason about the task; password fields are excluded. Some unlabeled or protected UI cannot be controlled.',
+  'Never tap Send, Submit, Delete, Buy, Pay, Confirm, or other consequential controls; ask the user to perform or explicitly confirm that final step themselves. Never access passwords, one-time codes, or payment details. Do not claim a screen action worked unless its tool result says it succeeded.',
   'For coding and terminal requests, write the command with its intended operating system, explain what it does, and flag risky/destructive effects. Draft commands for the user to review; never attempt to execute them.',
   'Android can launch visible installed apps. Windows can launch apps listed in the Start menu. Browser mode can only open known website fallbacks.',
 ].join(' ');
@@ -273,6 +334,42 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
       const url = 'https://www.google.com/search?q=' + encodeURIComponent(query);
       return await openExternalUrl(url);
     }
+    case 'inspect_screen': {
+      if (!/\\b(inspect|read|look at|what is on|what's on|see|check)\\b/i.test(userRequest)) {
+        return { success: false, message: 'Not executed: the user did not clearly ask JARVIS to inspect the screen.' };
+      }
+      if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Screen inspection is currently available in the Android app only.' };
+      const result = await AppControl.inspectScreen();
+      return { success: true, screen: result, message: result.message + ' Visible labels will be sent to the selected AI provider for this requested task.' };
+    }
+    case 'tap_text': {
+      if (!/\\b(tap|click|press|select)\\b/i.test(userRequest)) return { success: false, message: 'Not executed: explicitly ask JARVIS to tap, click, press, or select a control.' };
+      if (/\\b(send|submit|delete|remove|buy|purchase|pay|confirm|transfer|post|publish|place order|call|dial)\\b/i.test(args.text || '')) {
+        return { success: false, message: 'Safety pause: I will not activate a consequential control automatically. Please review the screen and perform that final action yourself.' };
+      }
+      if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Screen tapping is currently available in the Android app only.' };
+      return await AppControl.tapText({ text: String(args.text || '').slice(0, 180) });
+    }
+    case 'type_text': {
+      if (!/\\b(type|enter|write|fill in|put)\\b/i.test(userRequest)) return { success: false, message: 'Not executed: the user did not clearly ask JARVIS to type text.' };
+      if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Screen typing is currently available in the Android app only.' };
+      return await AppControl.typeText({ text: String(args.text || '').slice(0, 2000) });
+    }
+    case 'scroll_screen': {
+      if (!/\\b(scroll|swipe)\\b/i.test(userRequest)) return { success: false, message: 'Not executed: the user did not clearly ask JARVIS to scroll.' };
+      if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Screen scrolling is currently available in the Android app only.' };
+      return await AppControl.scrollScreen({ direction: args.direction });
+    }
+    case 'navigation_action': {
+      const action = String(args.action || '');
+      if (!(action === 'back' && /\\b(go back|press back|back button)\\b/i.test(userRequest))
+          && !(action === 'home' && /\\b(go home|home screen|press home)\\b/i.test(userRequest))
+          && !(action === 'recents' && /\\b(recent apps|open recents|show recents)\\b/i.test(userRequest))) {
+        return { success: false, message: 'Not executed: ask explicitly for Back, Home, or Recents.' };
+      }
+      if (Capacitor.getPlatform() !== 'android') return { success: false, message: 'Android navigation is available in the Android app only.' };
+      return await AppControl.navigationAction({ action });
+    }
     case 'copy_text': {
       if (!asksToCopy) return { success: false, message: 'Not executed: the user did not clearly ask to copy text.' };
       const text = String(args.text || '').slice(0, 12000);
@@ -314,6 +411,7 @@ export default function App() {
   const [speakResponses, setSpeakResponses] = useState(true);
   const [voiceStatus, setVoiceStatus] = useState('FISH AUDIO KEY REQUIRED');
   const [installedApps, setInstalledApps] = useState([]);
+  const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
   const [actionInProgress, setActionInProgress] = useState('');
   const isAndroidApp = Capacitor.getPlatform() === 'android';
   const isDesktopApp = typeof window !== 'undefined' && Boolean(window.jarvisDesktop);
@@ -331,6 +429,18 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages]);
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'android') return;
+    let active = true;
+    const refresh = () => AppControl.accessibilityStatus()
+      .then(result => { if (active) setAccessibilityEnabled(Boolean(result?.enabled)); })
+      .catch(() => { if (active) setAccessibilityEnabled(false); });
+    refresh();
+    const handleVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => { active = false; document.removeEventListener('visibilitychange', handleVisibility); };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -500,38 +610,65 @@ export default function App() {
       if (!firstMessage) throw new Error(providerName + ' returned an empty response.');
 
       let answer = firstMessage.content?.trim() || '';
-      const toolCalls = Array.isArray(firstMessage.tool_calls) ? firstMessage.tool_calls : [];
+      let currentMessage = firstMessage;
+      let toolCalls = Array.isArray(currentMessage.tool_calls) ? currentMessage.tool_calls : [];
+      let actionCount = 0;
+      const toolResults = [];
 
-      if (toolCalls.length > 0) {
-        setStatus('RUNNING APPROVED ACTIONS');
-        apiMessages.push(firstMessage);
-        const toolResults = [];
+      for (let round = 0; round < 5 && toolCalls.length > 0; round += 1) {
+        setStatus(round === 0 ? 'RUNNING APPROVED ACTIONS' : 'CONTINUING SCREEN TASK');
+        apiMessages.push(currentMessage);
 
-        for (let index = 0; index < toolCalls.length; index += 1) {
-          const toolCall = toolCalls[index];
-          let result;
-          if (index >= 2) {
-            result = { success: false, message: 'JARVIS limits each message to two actions.' };
-          } else {
-            try {
-              result = await runAssistantTool(toolCall, clean, installedApps);
-            } catch (error) {
-              result = { success: false, message: 'Action failed: ' + (error?.message || 'Unknown error') };
-            }
+        // Run one action per model round, then let the model observe its result
+        // before it chooses the next step. This prevents blind multi-tap chains.
+        const chosenCall = toolCalls[0];
+        let result;
+        if (actionCount >= 5) {
+          result = { success: false, message: 'JARVIS stopped after five actions for this request. Review the current screen before continuing.' };
+        } else {
+          try {
+            result = await runAssistantTool(chosenCall, clean, installedApps);
+          } catch (error) {
+            result = { success: false, message: 'Action failed: ' + (error?.message || 'Unknown error') };
           }
-          toolResults.push(result);
+          actionCount += 1;
+        }
+        toolResults.push(result);
+        apiMessages.push({
+          role: 'tool',
+          tool_call_id: chosenCall.id,
+          content: JSON.stringify(result),
+        });
+
+        for (const deferredCall of toolCalls.slice(1)) {
+          const deferred = { success: false, message: 'Only one action is executed per step. Review the last action result and request the next safe action separately.' };
+          toolResults.push(deferred);
           apiMessages.push({
             role: 'tool',
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(result),
+            tool_call_id: deferredCall.id,
+            content: JSON.stringify(deferred),
           });
         }
 
-        setStatus('SUMMARIZING ACTION');
-        const finalData = await requestCompletion(apiMessages, false);
-        answer = finalData?.choices?.[0]?.message?.content?.trim() || '';
-        if (!answer) answer = toolResults.map(result => result.message).join('\n');
+        if (actionCount >= 5) {
+          answer = toolResults.map(item => item.message).filter(Boolean).join('\n');
+          break;
+        }
+        setStatus('CHECKING ACTION RESULT');
+        const nextData = await requestCompletion(apiMessages, true);
+        currentMessage = nextData?.choices?.[0]?.message;
+        if (!currentMessage) throw new Error(providerName + ' returned an empty response.');
+        answer = currentMessage.content?.trim() || '';
+        toolCalls = Array.isArray(currentMessage.tool_calls) ? currentMessage.tool_calls : [];
+        if (toolCalls.length === 0) break;
+      }
+
+      if (toolCalls.length > 0 && actionCount >= 5) {
+        answer = (answer ? answer + '\n\n' : '') + 'I stopped after five actions to keep control bounded. Check the current screen before continuing.';
+      }
+      if (actionCount > 0) {
         setStatus(toolResults.some(result => result.success) ? 'ACTION COMPLETE' : 'ACTION NOT COMPLETED');
+        if (!answer) answer = toolResults.map(result => result.message).filter(Boolean).join('\n');
       } else {
         setStatus(providerName + ' CONNECTED');
       }
@@ -552,6 +689,23 @@ export default function App() {
       setStatus('CONNECTION ERROR');
     } finally {
       setSending(false);
+    }
+  };
+
+  const openAccessibilitySettings = async () => {
+    try {
+      await AppControl.openAccessibilitySettings();
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        text: 'Android Accessibility settings opened. Find JARVIS Screen Control and enable it only if you want JARVIS to inspect and operate labelled controls on your phone. Return to JARVIS afterward.',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }]);
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        text: 'Could not open Accessibility settings: ' + (error?.message || 'Unknown error') + '. Open Android Settings > Accessibility manually.',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }]);
     }
   };
 
@@ -655,8 +809,15 @@ export default function App() {
           <div className="eyebrow"><span className="eyebrow-line" /> DEVICE ACTIONS</div>
           <p>{isAndroidApp ? 'Ask JARVIS to open any launchable app by name. The installed-app list stays on your phone and is not sent to the AI provider.' : isDesktopApp ? 'Ask JARVIS to open an app by name. Windows launching is limited to Start menu apps; JARVIS will not run arbitrary shell commands.' : 'Install the Android APK or Windows app for prompt-based launch of installed apps.'}</p>
         </div>
-        <span className="device-mode">{isAndroidApp ? 'ANDROID APP CONTROL' : isDesktopApp ? 'WINDOWS APP CONTROL' : 'WEB LINKS ONLY'}{installedApps.length ? ' · ' + installedApps.length + ' APPS' : ''}</span>
+        <div className="device-mode">{isAndroidApp ? (accessibilityEnabled ? 'SCREEN CONTROL ENABLED' : 'APP LAUNCH READY') : isDesktopApp ? 'WINDOWS APP CONTROL' : 'WEB LINKS ONLY'}{installedApps.length ? ' · ' + installedApps.length + ' APPS' : ''}</div>
       </div>
+      {isAndroidApp && <div className="screen-control-row">
+        <div className="screen-control-copy">
+          <strong>{accessibilityEnabled ? 'SCREEN CONTROL CONNECTED' : 'ENABLE FULLER PHONE CONTROL'}</strong>
+          <span>{accessibilityEnabled ? 'JARVIS can read labelled controls and tap, type, scroll, and navigate when you explicitly ask.' : 'Android requires you to enable this optional accessibility service yourself. Screen labels requested for a task are sent to your selected AI provider.'}</span>
+        </div>
+        <button className="primary-button" onClick={openAccessibilitySettings}>{accessibilityEnabled ? 'Accessibility settings' : 'Enable screen control'} ↗</button>
+      </div>}
       <div className="app-shortcuts">
         {APP_CATALOG.map(app => <button className="app-shortcut" type="button" key={app.id} disabled={Boolean(actionInProgress)} onClick={() => launchFromShortcut(app.id)}>
           <span className="app-shortcut-mark">{app.label.slice(0, 1)}</span>
@@ -678,7 +839,7 @@ export default function App() {
         <span className="input-hint">ENTER ↵</span>
         <button className="send-button" type="submit" aria-label="Send message" disabled={sending}><Send size={17} /></button>
       </form>
-      <div className="console-disclaimer"><ShieldCheck size={13} /> {provider.toUpperCase()} AI · ALLOWLISTED ACTIONS ONLY · NO ARBITRARY COMMAND EXECUTION</div>
+      <div className="console-disclaimer"><ShieldCheck size={13} /> {provider.toUpperCase()} AI · USER-ENABLED ANDROID SCREEN CONTROL · CONSEQUENTIAL ACTIONS REQUIRE MANUAL REVIEW</div>
     </section>
 
     <footer className="footer"><span>J.A.R.V.I.S. INTERFACE <b>v0.1.0</b></span><span>BUILT FOR HUMAN-APPROVED ASSISTANCE</span><span><span className="status-dot" /> SYSTEM READY</span></footer>
