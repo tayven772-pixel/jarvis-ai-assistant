@@ -100,6 +100,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.TimeZone;
 import android.content.pm.ResolveInfo;
+import android.os.Environment;
+import android.os.StatFs;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -158,6 +160,30 @@ public class AppControlPlugin extends Plugin {
         }
     }
 
+
+    @PluginMethod
+    public void getStorageInfo(PluginCall call) {
+        try {
+            String path = Environment.getExternalStorageDirectory().getAbsolutePath();
+            StatFs stats = new StatFs(path);
+            long totalBytes = Math.max(0L, stats.getTotalBytes());
+            long freeBytes = Math.max(0L, stats.getAvailableBytes());
+            JSObject volume = new JSObject();
+            volume.put("name", "Internal shared storage");
+            volume.put("totalBytes", totalBytes);
+            volume.put("freeBytes", freeBytes);
+            volume.put("usedBytes", Math.max(0L, totalBytes - freeBytes));
+            JSArray volumes = new JSArray();
+            volumes.put(volume);
+            JSObject result = new JSObject();
+            result.put("success", true);
+            result.put("source", "android");
+            result.put("volumes", volumes);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("Could not read storage information on this phone.", "STORAGE_INFO_FAILED", error);
+        }
+    }
 
     @PluginMethod
     public void createCalendarEvent(PluginCall call) {
