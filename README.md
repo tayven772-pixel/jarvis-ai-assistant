@@ -4,6 +4,7 @@ A standalone J.A.R.V.I.S.-inspired assistant project, separate from Meta Code.
 
 ## Features
 - Responsive blue holographic dashboard with animated assistant core
+- Read-only disk usage dashboard and local folder-size/file-type analysis for user-selected folders (browser folder-picker support varies by device)
 - Chat with Groq, OpenAI, or a configurable OpenAI-compatible Omniroute endpoint
 - Local conversation history (last 80 messages) and user-editable memory notes
 - Browser speech recognition for voice input where supported
