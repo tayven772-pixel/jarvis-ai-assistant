@@ -386,6 +386,8 @@ export default function App() {
   const [storageInfo, setStorageInfo] = useState(null);
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageError, setStorageError] = useState('');
+  const [folderReport, setFolderReport] = useState(null);
+  const folderInputRef = useRef(null);
   const [provider, setProvider] = useState('groq');
   const [groqApiKey, setGroqApiKey] = useState('');
   const [openAiApiKey, setOpenAiApiKey] = useState('');
@@ -711,6 +713,34 @@ export default function App() {
     }
   };
 
+  const analyzeSelectedFolder = event => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    const folderTotals = new Map();
+    const typeTotals = new Map();
+    let totalBytes = 0;
+    let folderCount = 0;
+    for (const file of files) {
+      const relativePath = String(file.webkitRelativePath || file.name || '').replace(/\\/g, '/');
+      const parts = relativePath.split('/').filter(Boolean);
+      if (parts.length > 1) folderCount += 1;
+      const directoryParts = parts.slice(0, -1);
+      const topFolder = directoryParts[0] || '(selected folder root)';
+      const size = Math.max(0, Number(file.size) || 0);
+      totalBytes += size;
+      folderTotals.set(topFolder, (folderTotals.get(topFolder) || 0) + size);
+      const extensionMatch = (parts.at(-1) || '').match(/\\.([^.]+)$/);
+      const extension = extensionMatch ? extensionMatch[1].toLowerCase().slice(0, 12) : 'no extension';
+      const type = extension === 'no extension' ? extension : '.' + extension;
+      typeTotals.set(type, (typeTotals.get(type) || 0) + size);
+    }
+    const largestFolders = [...folderTotals].map(([name, bytes]) => ({ name, bytes })).sort((a, b) => b.bytes - a.bytes).slice(0, 8);
+    const largestTypes = [...typeTotals].map(([name, bytes]) => ({ name, bytes })).sort((a, b) => b.bytes - a.bytes).slice(0, 7);
+    setFolderReport({ fileCount: files.length, folderCount, totalBytes, largestFolders, largestTypes, selectedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+    setStorageError('');
+    event.target.value = '';
+  };
+
   const refreshStorageInfo = async () => {
     setStorageLoading(true);
     setStorageError('');
@@ -876,7 +906,17 @@ export default function App() {
     {storageOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setStorageOpen(false); }}>
       <section className="settings-modal storage-modal" role="dialog" aria-modal="true" aria-labelledby="storage-title">
         <div className="modal-head"><div><span className="eyebrow"><HardDrive size={13} /> READ-ONLY SYSTEM VIEW</span><h2 id="storage-title">Disk map</h2></div><button className="icon-button" onClick={() => setStorageOpen(false)} aria-label="Close disk map">×</button></div>
-        <p className="modal-copy">Live storage totals only. JARVIS does not open, scan, move, or delete your personal files from this view.</p>
+        <p className="modal-copy">Live storage totals plus an optional, local folder analysis. Folder analysis reads file names and sizes only from the folder you explicitly select; it never uploads file contents or changes files.</p>
+        <input ref={folderInputRef} className="folder-picker-input" type="file" multiple webkitdirectory="" directory="" onChange={analyzeSelectedFolder} aria-label="Choose a folder to analyze" />
+        <div className="folder-scan-toolbar"><div><strong>FOLDER SIZE MAP</strong><span>LOCAL ANALYSIS · READ ONLY</span></div><button className="secondary-button" onClick={() => folderInputRef.current?.click()}><HardDrive size={14} /> Choose folder</button></div>
+        {folderReport && <div className="folder-report">
+          <div className="folder-report-stats"><div><span>TOTAL SELECTED</span><strong>{formatBytes(folderReport.totalBytes)}</strong></div><div><span>FILES</span><strong>{folderReport.fileCount.toLocaleString()}</strong></div><div><span>FOLDERS</span><strong>{folderReport.folderCount.toLocaleString()}</strong></div></div>
+          <div className="folder-report-columns">
+            <div className="folder-report-list"><h3>Largest top-level folders</h3>{folderReport.largestFolders.map((folder, index) => <div className="folder-row" key={folder.name}><div className="folder-row-label"><span>{folder.name}</span><strong>{formatBytes(folder.bytes)}</strong></div><div className="storage-bar"><span style={{ width: (folderReport.totalBytes ? Math.max(1, folder.bytes / folderReport.totalBytes * 100) : 0) + '%' }} /></div></div>)}</div>
+            <div className="folder-report-list"><h3>File types by size</h3>{folderReport.largestTypes.map(type => <div className="folder-row" key={type.name}><div className="folder-row-label"><span>{type.name}</span><strong>{formatBytes(type.bytes)}</strong></div><div className="storage-bar"><span style={{ width: (folderReport.totalBytes ? Math.max(1, type.bytes / folderReport.totalBytes * 100) : 0) + '%' }} /></div></div>)}</div>
+          </div>
+          <div className="folder-report-foot"><span>ANALYZED AT {folderReport.selectedAt}</span><button className="text-button" onClick={() => setFolderReport(null)}>Clear report</button></div>
+        </div>}
         {storageLoading && <div className="storage-state"><RefreshCw size={16} /> READING STORAGE METRICS…</div>}
         {storageError && <div className="storage-error">{storageError}</div>}
         {storageInfo?.isAppQuota && <div className="storage-note">Browser preview limitation: this is the storage quota available to the JARVIS web app, not total phone or computer disk space.</div>}
