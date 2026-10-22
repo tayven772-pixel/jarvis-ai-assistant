@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { AppLauncher } from '@capacitor/app-launcher';
 import {
-  Activity, AudioLines, Bot, Check, ChevronDown, Command, Cpu, Headphones,
-  MessageSquare, Mic, MicOff, Monitor, Moon, Power, Send, Settings2,
+  Activity, AudioLines, Bot, Check, ChevronDown, Command, Cpu, HardDrive, Headphones,
+  MessageSquare, Mic, MicOff, Monitor, Moon, Power, RefreshCw, Send, Settings2,
   ShieldCheck, Sparkles, Wifi, Zap
 } from 'lucide-react';
 
@@ -73,6 +73,7 @@ const AI_TOOLS = [
   { type: 'function', function: { name: 'type_text', description: 'Type user-requested text into the currently focused non-password Android field as part of the requested task. Never infer credentials or secrets.', parameters: { type: 'object', properties: { text: { type: 'string', maxLength: 2000 } }, required: ['text'], additionalProperties: false } } },
   { type: 'function', function: { name: 'scroll_screen', description: 'Scroll the Android screen in a requested direction.', parameters: { type: 'object', properties: { direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] } }, required: ['direction'], additionalProperties: false } } },
   { type: 'function', function: { name: 'navigation_action', description: 'Use Android Back, Home, or Recents when the user asks.', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['back', 'home', 'recents'] } }, required: ['action'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'inspect_storage', description: 'Read a summary of available system storage drives and free space when the user asks about disk space or storage.', parameters: { type: 'object', properties: {}, required: [], additionalProperties: false } } },
 ];
 
 const SYSTEM_PROMPT = [
@@ -96,6 +97,34 @@ function normalizeAppName(value) {
     .toLowerCase()
     .replace(/^(the|my)\s+/, '')
     .replace(/[^a-z0-9]+/g, '');
+}
+
+function formatBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024) return bytes + ' B';
+  const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+  let amount = bytes / 1024;
+  let index = 0;
+  while (amount >= 1024 && index < units.length - 1) { amount /= 1024; index += 1; }
+  return amount.toFixed(amount >= 100 ? 0 : amount >= 10 ? 1 : 2) + ' ' + units[index];
+}
+
+async function getStorageInfo() {
+  if (typeof window !== 'undefined' && window.jarvisDesktop?.getStorageInfo) {
+    const result = await window.jarvisDesktop.getStorageInfo();
+    return { ...result, volumes: Array.isArray(result?.volumes) ? result.volumes : [] };
+  }
+  if (Capacitor.getPlatform() === 'android') {
+    const result = await AppControl.getStorageInfo();
+    return { ...result, volumes: Array.isArray(result?.volumes) ? result.volumes : [] };
+  }
+  if (navigator.storage?.estimate) {
+    const estimate = await navigator.storage.estimate();
+    const totalBytes = Number(estimate.quota || 0);
+    const usedBytes = Number(estimate.usage || 0);
+    return { success: true, source: 'browser', isAppQuota: true, volumes: [{ name: 'JARVIS app storage quota', totalBytes, usedBytes, freeBytes: Math.max(0, totalBytes - usedBytes) }] };
+  }
+  return { success: false, volumes: [], message: 'Storage information is not available in this environment.' };
 }
 
 async function discoverInstalledApps() {
@@ -241,6 +270,23 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
     && !/\b(don't|do not|never|shouldn't|should not|without)\b.{0,50}\b(copy)\b/i.test(userRequest);
 
   switch (toolCall.function?.name) {
+    case 'inspect_storage': {
+      if (!/\\b(disk|drive|storage|space|volume|free space)\\b/i.test(userRequest)) return { success: false, message: 'Not executed: ask JARVIS to check disk space or storage.' };
+      try {
+        const result = await getStorageInfo();
+        if (!result?.success || !result.volumes?.length) return { success: false, message: result?.message || 'No storage volumes were reported.' };
+        const summary = result.volumes.map(volume => {
+          const total = Number(volume.totalBytes) || 0;
+          const used = Number(volume.usedBytes) || Math.max(0, total - (Number(volume.freeBytes) || 0));
+          const free = Number(volume.freeBytes) || Math.max(0, total - used);
+          const percent = total > 0 ? Math.round((used / total) * 100) : 0;
+          return (volume.name || 'Storage') + ': ' + formatBytes(used) + ' used, ' + formatBytes(free) + ' free of ' + formatBytes(total) + (total ? ' (' + percent + '% used)' : '');
+        }).join('\\n');
+        return { success: true, message: (result.isAppQuota ? 'This browser reports JARVIS app storage quota, not the whole device. ' : 'Read-only storage report. ') + summary, volumes: result.volumes };
+      } catch (error) {
+        return { success: false, message: 'Could not read storage information: ' + (error?.message || 'unknown error') };
+      }
+    }
     case 'open_app':
       if (!asksToOpen) return { success: false, message: 'Not executed: the user did not clearly ask to open an app.' };
       return await launchInstalledApp(args.app_name, installedApps);
@@ -336,6 +382,10 @@ export default function App() {
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
+  const [storageInfo, setStorageInfo] = useState(null);
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [storageError, setStorageError] = useState('');
   const [provider, setProvider] = useState('groq');
   const [groqApiKey, setGroqApiKey] = useState('');
   const [openAiApiKey, setOpenAiApiKey] = useState('');
@@ -661,6 +711,31 @@ export default function App() {
     }
   };
 
+  const refreshStorageInfo = async () => {
+    setStorageLoading(true);
+    setStorageError('');
+    setStorageOpen(true);
+    try {
+      const result = await getStorageInfo();
+      if (!result?.success || !result.volumes?.length) throw new Error(result?.message || 'No storage volumes were returned.');
+      setStorageInfo(result);
+      const summary = result.volumes.map(volume => {
+        const total = Number(volume.totalBytes) || 0;
+        const used = Number(volume.usedBytes) || Math.max(0, total - (Number(volume.freeBytes) || 0));
+        const free = Number(volume.freeBytes) || Math.max(0, total - used);
+        const percent = total > 0 ? Math.round((used / total) * 100) : 0;
+        return (volume.name || 'Storage') + ': ' + formatBytes(used) + ' used, ' + formatBytes(free) + ' free of ' + formatBytes(total) + (total ? ' (' + percent + '% used)' : '');
+      }).join('\\n');
+      setMessages(prev => [...prev, { role: 'assistant', text: (result.isAppQuota ? 'This browser reports JARVIS app storage quota, not the whole device. ' : 'Read-only storage report. ') + summary, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+      setStatus('STORAGE REPORT READY');
+    } catch (error) {
+      setStorageError(error?.message || 'Storage information could not be read.');
+      setStatus('STORAGE REPORT UNAVAILABLE');
+    } finally {
+      setStorageLoading(false);
+    }
+  };
+
   const launchFromShortcut = async appId => {
     if (actionInProgress) return;
     setActionInProgress(appId);
@@ -732,6 +807,7 @@ export default function App() {
         <button className="quick-command" onClick={() => sendMessage('Give me a system status summary')}><Activity size={16} /><span>System status</span><span className="command-arrow">↗</span></button>
         <button className="quick-command" onClick={() => sendMessage('Start a coding workspace session. Ask what repository or files I want to work on, then help plan, write, review, and debug code. Do not claim to edit files unless a connected tool actually does so.')}><Command size={16} /><span>Coding workspace</span><span className="command-arrow">↗</span></button>
         <button className="quick-command" onClick={() => sendMessage('Help me create a reminder. Ask for the title and date, and on Android use the calendar event tool only after the details are clear.')}><Activity size={16} /><span>Plan a reminder</span><span className="command-arrow">↗</span></button>
+      <button className="quick-command" onClick={() => void refreshStorageInfo()}><HardDrive size={16} /><span>Disk map / storage</span><span className="command-arrow">↗</span></button>
       <button className="quick-command" onClick={() => sendMessage('Explain the available voice features')}><Headphones size={16} /><span>Voice interface</span><span className="command-arrow">↗</span></button>
         <div className="side-foot"><span className="pulse-small" /> SECURE SESSION <span>·</span> LOCAL UI</div>
       </aside>
@@ -796,6 +872,28 @@ export default function App() {
     </section>
 
     <footer className="footer"><span>J.A.R.V.I.S. INTERFACE <b>v0.1.0</b></span><span>BUILT FOR HUMAN-APPROVED ASSISTANCE</span><span><span className="status-dot" /> SYSTEM READY</span></footer>
+
+    {storageOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setStorageOpen(false); }}>
+      <section className="settings-modal storage-modal" role="dialog" aria-modal="true" aria-labelledby="storage-title">
+        <div className="modal-head"><div><span className="eyebrow"><HardDrive size={13} /> READ-ONLY SYSTEM VIEW</span><h2 id="storage-title">Disk map</h2></div><button className="icon-button" onClick={() => setStorageOpen(false)} aria-label="Close disk map">×</button></div>
+        <p className="modal-copy">Live storage totals only. JARVIS does not open, scan, move, or delete your personal files from this view.</p>
+        {storageLoading && <div className="storage-state"><RefreshCw size={16} /> READING STORAGE METRICS…</div>}
+        {storageError && <div className="storage-error">{storageError}</div>}
+        {storageInfo?.isAppQuota && <div className="storage-note">Browser preview limitation: this is the storage quota available to the JARVIS web app, not total phone or computer disk space.</div>}
+        {storageInfo?.volumes?.map((volume, index) => {
+          const total = Number(volume.totalBytes) || 0;
+          const used = Number(volume.usedBytes) || Math.max(0, total - (Number(volume.freeBytes) || 0));
+          const free = Number(volume.freeBytes) || Math.max(0, total - used);
+          const percent = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+          return <div className="storage-volume" key={(volume.name || 'storage') + index}>
+            <div className="storage-volume-head"><strong><HardDrive size={16} /> {volume.name || 'Storage volume'}</strong><span>{percent}% USED</span></div>
+            <div className="storage-bar"><span style={{ width: percent + '%' }} /></div>
+            <div className="storage-legend"><span>{formatBytes(used)} used</span><span>{formatBytes(free)} free</span><strong>{formatBytes(total)} total</strong></div>
+          </div>;
+        })}
+        <div className="modal-actions"><button className="secondary-button" onClick={() => void refreshStorageInfo()} disabled={storageLoading}><RefreshCw size={14} /> Refresh</button><button className="primary-button" onClick={() => setStorageOpen(false)}>Close</button></div>
+      </section>
+    </div>}
 
     {settingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}>
       <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
