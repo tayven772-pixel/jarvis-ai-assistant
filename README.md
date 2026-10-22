@@ -71,3 +71,22 @@ Open Settings and choose Groq, OpenAI, or Omniroute.
 - Android screen-control features require the user to enable the accessibility service manually. Screen labels used for a requested task may be sent to the selected AI provider. Some protected or unlabeled controls cannot be operated.
 - Consequential actions such as sending messages, deleting, purchasing, or posting are reserved for manual review.
 - Android calendar events are created only after the app requests calendar permission. Calendar creation is not currently available on Windows.
+
+
+## JARVIS MCP server (early, read-only version)
+
+JARVIS includes a local Model Context Protocol (MCP) server for MCP clients that can launch a local process over stdio. It currently exposes safe, read-only tools:
+- `jarvis_status` — report the bridge status and capabilities
+- `jarvis_check_local_ai` — check a local Ollama endpoint and list installed model names
+- `jarvis_connection_guide` — explain the connection setup
+
+Run it from the repository folder:
+
+```bash
+npm install
+npm run mcp:server
+```
+
+MCP clients normally launch this process themselves. Configure the client with the absolute path to your Node.js executable and the absolute path to `mcp/server.js` as an argument. The process uses stdio for MCP messages, so do not add ordinary console logging to stdout.
+
+**Client compatibility:** this local stdio server can be used by compatible desktop clients that support launching local MCP processes. ChatGPT's remote MCP connection requires a separately hosted endpoint that is reachable and uses a supported remote transport; this local stdio process alone is not enough. Remote hosting should include authentication and access controls. This starter server does not offer arbitrary shell commands, file modification, or computer/phone control.
