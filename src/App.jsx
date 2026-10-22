@@ -271,7 +271,7 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
 
   switch (toolCall.function?.name) {
     case 'inspect_storage': {
-      if (!/\\b(disk|drive|storage|space|volume|free space)\\b/i.test(userRequest)) return { success: false, message: 'Not executed: ask JARVIS to check disk space or storage.' };
+      if (!/\b(disk|drive|storage|space|volume|free space)\b/i.test(userRequest)) return { success: false, message: 'Not executed: ask JARVIS to check disk space or storage.' };
       try {
         const result = await getStorageInfo();
         if (!result?.success || !result.volumes?.length) return { success: false, message: result?.message || 'No storage volumes were reported.' };
@@ -281,7 +281,7 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
           const free = Number(volume.freeBytes) || Math.max(0, total - used);
           const percent = total > 0 ? Math.round((used / total) * 100) : 0;
           return (volume.name || 'Storage') + ': ' + formatBytes(used) + ' used, ' + formatBytes(free) + ' free of ' + formatBytes(total) + (total ? ' (' + percent + '% used)' : '');
-        }).join('\\n');
+        }).join('\n');
         return { success: true, message: (result.isAppQuota ? 'This browser reports JARVIS app storage quota, not the whole device. ' : 'Read-only storage report. ') + summary, volumes: result.volumes };
       } catch (error) {
         return { success: false, message: 'Could not read storage information: ' + (error?.message || 'unknown error') };
@@ -725,7 +725,7 @@ export default function App() {
         const free = Number(volume.freeBytes) || Math.max(0, total - used);
         const percent = total > 0 ? Math.round((used / total) * 100) : 0;
         return (volume.name || 'Storage') + ': ' + formatBytes(used) + ' used, ' + formatBytes(free) + ' free of ' + formatBytes(total) + (total ? ' (' + percent + '% used)' : '');
-      }).join('\\n');
+      }).join('\n');
       setMessages(prev => [...prev, { role: 'assistant', text: (result.isAppQuota ? 'This browser reports JARVIS app storage quota, not the whole device. ' : 'Read-only storage report. ') + summary, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
       setStatus('STORAGE REPORT READY');
     } catch (error) {
