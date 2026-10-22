@@ -90,3 +90,18 @@ npm run mcp:server
 MCP clients normally launch this process themselves. Configure the client with the absolute path to your Node.js executable and the absolute path to `mcp/server.js` as an argument. The process uses stdio for MCP messages, so do not add ordinary console logging to stdout.
 
 **Client compatibility:** this local stdio server can be used by compatible desktop clients that support launching local MCP processes. ChatGPT's remote MCP connection requires a separately hosted endpoint that is reachable and uses a supported remote transport; this local stdio process alone is not enough. Remote hosting should include authentication and access controls. This starter server does not offer arbitrary shell commands, file modification, or computer/phone control.
+
+
+## Hosted remote MCP (optional)
+
+The original `npm run mcp:server` command remains the local stdio server for desktop clients.
+A separate HTTP entry point is provided for hosted remote MCP:
+
+- `npm run mcp:remote` starts the Streamable-HTTP-style endpoint on `PORT` (default 3000).
+- `GET /health` is a non-sensitive health check.
+- `POST /mcp` requires `Authorization: Bearer <JARVIS_MCP_TOKEN>`.
+- Set `JARVIS_MCP_TOKEN` to a randomly generated secret of at least 32 characters in the hosting provider's secret environment settings. Do not commit it or paste it into public issues.
+- `render.yaml` is a deployment blueprint for Render. Create the service from the repository and enter the secret when prompted. Free services may sleep when idle.
+- After deployment, test `https://YOUR-SERVICE.onrender.com/health`; the MCP endpoint is `https://YOUR-SERVICE.onrender.com/mcp`.
+
+This is a minimal JSON-response HTTP transport implementation intended for compatibility testing. MCP clients vary in support for bearer-token authentication and protocol versions, so successful deployment does not guarantee that every client can connect. ChatGPT custom MCP connectors are configured on the web, not the mobile app, and require a plan/workspace that supports custom connectors. Claude remote connectors require a publicly reachable HTTPS endpoint. The hosted server only reports status and whether Ollama runs on the hosting server; it cannot inspect Ollama on your phone or PC, and does not control either device.
