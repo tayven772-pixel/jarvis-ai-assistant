@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: jarvis-mcp-remote
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run mcp:remote
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: JARVIS_MCP_TOKEN
+        sync: false
