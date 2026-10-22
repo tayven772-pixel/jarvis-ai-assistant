@@ -5,7 +5,7 @@ A standalone J.A.R.V.I.S.-inspired assistant project, separate from Meta Code.
 ## Features
 - Responsive blue holographic dashboard with animated assistant core
 - Read-only disk usage dashboard and local folder-size/file-type analysis for user-selected folders (browser folder-picker support varies by device)
-- Chat with Groq, OpenAI, or a configurable OpenAI-compatible Omniroute endpoint
+- Chat with Groq, OpenAI, Omniroute, or auto-detected models from a custom OpenAI-compatible API endpoint
 - Local conversation history (last 80 messages) and user-editable memory notes
 - Browser speech recognition for voice input where supported
 - Optional Fish Audio text-to-speech for spoken replies
@@ -56,7 +56,7 @@ Open the repository's **Actions** tab, select a completed workflow run, and down
 Open Settings and choose Groq, OpenAI, or Omniroute.
 - Groq and OpenAI need a provider API key. OpenAI API use is billed separately from ChatGPT plans.
 - Omniroute uses an OpenAI-compatible base URL, defaulting to `http://127.0.0.1:20128/v1`. On Windows, localhost refers to the same computer. On Android, localhost refers to the phone, not a separate VPS or computer. A remote endpoint must be reachable from the device and configured securely; do not expose an unauthenticated service to the public internet.
-- Model names depend on the provider or Omniroute configuration.
+- Auto-detect works with APIs that implement the OpenAI-compatible `/models` and `/chat/completions` endpoints; leave Model blank to discover the first listed model, or enter a model ID manually. It cannot automatically make an unrelated proprietary API compatible.
 - Do not ship API keys inside the web app, APK, EXE, or public repository. Keys entered in Settings stay in app memory only.
 
 ## Memory and privacy
