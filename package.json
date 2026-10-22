@@ -12,7 +12,8 @@
     "desktop:build": "npm run build && electron-builder --win nsis --publish never",
     "android:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
-    "mcp:server": "node mcp/server.js"
+    "mcp:server": "node mcp/server.js",
+    "mcp:remote": "node mcp/http-server.js"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
@@ -35,22 +36,9 @@
   "build": {
     "appId": "com.metacode.jarvisassistant",
     "productName": "JARVIS AI Assistant",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "electron/**/*", "package.json"],
+    "win": { "target": ["nsis"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
   }
 }
