@@ -56,10 +56,17 @@ function error(id, code, message) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (req.url === '/health' && req.method === 'GET') {
+  // Parse only the pathname so query strings or a trailing slash don't break routing.
+  let pathname;
+  try { pathname = new URL(req.url || '/', 'http://localhost').pathname.replace(/\\/+$/, '') || '/'; }
+  catch { pathname = '/'; }
+  if ((pathname === '/health' || pathname === '/healthz') && req.method === 'GET') {
     return send(res, 200, { status: 'ok', service: SERVER_INFO.name });
   }
-  if (req.url !== '/mcp') return send(res, 404, { error: 'Not found' });
+  if (pathname === '/' && req.method === 'GET') {
+    return send(res, 200, { service: SERVER_INFO.name, status: 'online', health: '/health', mcp: '/mcp' });
+  }
+  if (pathname !== '/mcp') return send(res, 404, { error: 'Not found', path: pathname });
   if (!TOKEN || TOKEN.length < 32) return send(res, 503, { error: 'Server authentication is not configured safely.' });
   const auth = req.headers.authorization || '';
   if (auth !== 'Bearer ' + TOKEN) return send(res, 401, { error: 'Unauthorized' });
