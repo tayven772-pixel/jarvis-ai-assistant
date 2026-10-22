@@ -58,7 +58,7 @@ function error(id, code, message) {
 const server = http.createServer(async (req, res) => {
   // Parse only the pathname so query strings or a trailing slash don't break routing.
   let pathname;
-  try { pathname = new URL(req.url || '/', 'http://localhost').pathname.replace(/\\/+$/, '') || '/'; }
+  try { pathname = new URL(req.url || '/', 'http://localhost').pathname.replace(/\/+$/, '') || '/'; }
   catch { pathname = '/'; }
   if ((pathname === '/health' || pathname === '/healthz') && req.method === 'GET') {
     return send(res, 200, { status: 'ok', service: SERVER_INFO.name });
