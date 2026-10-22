@@ -30,6 +30,30 @@ async function listWindowsStartApps() {
 
 ipcMain.handle("jarvis:desktop:list-apps", async () => listWindowsStartApps());
 
+ipcMain.handle("jarvis:desktop:get-storage-info", async () => {
+  if (process.platform !== "win32") throw new Error("System storage reporting is supported on Windows only in the desktop bridge.");
+  const script = 'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID, VolumeName, Size, FreeSpace | ConvertTo-Json -Compress';
+  const { stdout } = await execFileAsync(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+    { windowsHide: true, timeout: 15000, maxBuffer: 1024 * 1024 }
+  );
+  const raw = stdout.trim();
+  const parsed = raw ? JSON.parse(raw) : [];
+  const drives = Array.isArray(parsed) ? parsed : [parsed];
+  const volumes = drives.map(drive => {
+    const totalBytes = Math.max(0, Number(drive.Size) || 0);
+    const freeBytes = Math.max(0, Number(drive.FreeSpace) || 0);
+    return {
+      name: String(drive.DeviceID || "Drive") + (drive.VolumeName ? " · " + String(drive.VolumeName) : ""),
+      totalBytes,
+      freeBytes,
+      usedBytes: Math.max(0, totalBytes - freeBytes)
+    };
+  }).filter(volume => volume.totalBytes > 0);
+  return { success: true, source: "windows", volumes };
+});
+
 ipcMain.handle("jarvis:desktop:launch-app", async (_event, requestedAppId) => {
   if (process.platform !== "win32") throw new Error("Installed-app launching through this bridge is supported on Windows only.");
   if (typeof requestedAppId !== "string" || requestedAppId.length < 1 || requestedAppId.length > 512) {
