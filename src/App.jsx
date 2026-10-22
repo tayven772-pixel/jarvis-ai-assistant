@@ -393,7 +393,7 @@ export default function App() {
   const [openAiApiKey, setOpenAiApiKey] = useState('');
   const [omnirouteApiKey, setOmnirouteApiKey] = useState('');
   const [omnirouteBaseUrl, setOmnirouteBaseUrl] = useState('http://127.0.0.1:20128/v1');
-  const apiKey = provider === 'openai' ? openAiApiKey : provider === 'omniroute' ? omnirouteApiKey : groqApiKey;
+  const apiKey = provider === 'openai' ? openAiApiKey : (provider === 'omniroute' || provider === 'auto') ? omnirouteApiKey : groqApiKey;
   const setApiKey = provider === 'openai' ? setOpenAiApiKey : provider === 'omniroute' ? setOmnirouteApiKey : setGroqApiKey;
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [memoryNotes, setMemoryNotes] = useState(() => readLocalText(MEMORY_STORAGE_KEY));
@@ -540,8 +540,8 @@ export default function App() {
     setMessages(conversation);
     setInput('');
 
-    if (!apiKey.trim() && provider !== 'omniroute') {
-      const providerName = provider === 'openai' ? 'OpenAI API' : 'Groq';
+    if (!apiKey.trim() && provider !== 'omniroute' && provider !== 'auto') {
+      const providerName = provider === 'openai' ? 'OpenAI API' : provider === 'auto' ? 'Auto-detect API' : 'Groq';
       setMessages(prev => [...prev, {
         role: 'assistant',
         text: 'Your ' + providerName + ' API key is not connected. Open Settings to add it. Keys stay in app memory only and are cleared when JARVIS closes or reloads.',
@@ -552,24 +552,38 @@ export default function App() {
     }
 
     setSending(true);
-    const providerName = provider === 'openai' ? 'OPENAI' : provider === 'omniroute' ? 'OMNIROUTE' : 'GROQ';
+    const providerName = provider === 'openai' ? 'OPENAI' : provider === 'omniroute' ? 'OMNIROUTE' : provider === 'auto' ? 'AUTO-DETECT API' : 'GROQ';
     const baseUrl = omnirouteBaseUrl.trim().replace(/\/+$/, '');
+    const compatibleProvider = provider === 'omniroute' || provider === 'auto';
     const endpoint = provider === 'openai'
       ? 'https://api.openai.com/v1/chat/completions'
-      : provider === 'omniroute'
+      : compatibleProvider
         ? baseUrl + '/chat/completions'
         : 'https://api.groq.com/openai/v1/chat/completions';
-    if (provider === 'omniroute' && !/^https?:\/\//i.test(baseUrl)) {
-      setMessages(prev => [...prev, { role: 'assistant', text: 'Omniroute needs a valid local or trusted network base URL, such as http://127.0.0.1:20128/v1. Do not expose an unauthenticated Omniroute endpoint to the public internet.', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
-      setStatus('OMNIROUTE URL REQUIRED');
+    if (compatibleProvider && !/^https?:\/\//i.test(baseUrl)) {
+      setMessages(prev => [...prev, { role: 'assistant', text: 'Enter a valid HTTP(S) OpenAI-compatible API base URL. Do not expose an unauthenticated endpoint to the public internet.', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+      setStatus('API URL REQUIRED');
       setSending(false);
       return;
     }
-    const selectedModel = model.trim() || (provider === 'openai' ? OPENAI_DEFAULT_MODEL : DEFAULT_MODEL);
+    let selectedModel = model.trim() || (provider === 'openai' ? OPENAI_DEFAULT_MODEL : DEFAULT_MODEL);
+    if (provider === 'auto' && !model.trim()) {
+      try {
+        setStatus('DISCOVERING MODELS');
+        const modelResponse = await fetch(baseUrl + '/models', { headers: { ...(apiKey.trim() ? { 'Authorization': 'Bearer ' + apiKey.trim() } : {}) } });
+        const modelData = await modelResponse.json().catch(() => ({}));
+        const discovered = Array.isArray(modelData?.data) ? modelData.data.find(item => item?.id)?.id : '';
+        if (modelResponse.ok && discovered) { selectedModel = discovered; setModel(discovered); }
+        else throw new Error(modelData?.error?.message || 'The API did not return a model list. Enter a model ID manually.');
+      } catch (error) {
+        setMessages(prev => [...prev, { role: 'assistant', text: 'Auto-detect could not discover a model from /models: ' + (error?.message || 'unknown error') + '. Enter a model ID in Settings or use the provider\'s documented model endpoint.', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+        setStatus('MODEL DISCOVERY FAILED'); setSending(false); return;
+      }
+    }
 
     const requestCompletion = async (apiMessages, allowTools) => {
       const body = { model: selectedModel, messages: apiMessages };
-      if (provider === 'omniroute') body.max_tokens = 1200;
+      if (compatibleProvider) body.max_tokens = 1200;
       else body.max_completion_tokens = 1200;
       if (provider === 'groq') body.temperature = 0.7;
       if (allowTools) {
@@ -939,11 +953,11 @@ export default function App() {
       <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div className="modal-head"><div><span className="eyebrow">CONNECTION CONTROL</span><h2 id="settings-title">Configure AI link</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></div>
         <p className="modal-copy">Choose Groq, OpenAI, or your own Omniroute OpenAI-compatible endpoint. Chat keys stay in memory only. Chat history and notes below are stored locally on this device; never put secrets in memory notes.</p>
-        <label>AI PROVIDER <select value={provider} onChange={e => { const nextProvider = e.target.value; setProvider(nextProvider); setModel(nextProvider === 'openai' ? OPENAI_DEFAULT_MODEL : nextProvider === 'omniroute' ? OMNIROUTE_DEFAULT_MODEL : DEFAULT_MODEL); setShowConnectHint(false); }}><option value="groq">Groq API</option><option value="openai">OpenAI API</option><option value="omniroute">Omniroute (OpenAI-compatible)</option></select></label>
-        {provider === 'omniroute' && <label>OMNIROUTE BASE URL <input value={omnirouteBaseUrl} onChange={e => setOmnirouteBaseUrl(e.target.value)} placeholder="http://127.0.0.1:20128/v1" autoComplete="off" /><span className="field-help">On Windows, localhost points to this computer. On Android, localhost points to the phone itself. Use only a trusted endpoint; local-only services may reject app origins.</span></label>}
-        <label>{provider === 'openai' ? 'OPENAI API KEY' : provider === 'omniroute' ? 'OMNIROUTE API KEY (IF REQUIRED)' : 'GROQ API KEY'} <input type="password" autoComplete="off" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={provider === 'openai' ? 'Paste your OpenAI Platform API key' : provider === 'omniroute' ? 'Optional, if your endpoint requires a key' : 'Paste your Groq API key'} /></label>
-        {provider !== 'omniroute' && <p className="provider-help"><a href={provider === 'openai' ? 'https://platform.openai.com/api-keys' : 'https://console.groq.com/keys'} target="_blank" rel="noreferrer">Get {provider === 'openai' ? 'an OpenAI API key' : 'a Groq API key'} ↗</a>{provider === 'openai' ? ' API use is billed separately from ChatGPT plans.' : ' Check your provider usage limits.'}</p>}
-        <label>MODEL <input value={model} onChange={e => setModel(e.target.value)} placeholder={provider === 'openai' ? OPENAI_DEFAULT_MODEL : DEFAULT_MODEL} /></label>
+        <label>AI PROVIDER <select value={provider} onChange={e => { const nextProvider = e.target.value; setProvider(nextProvider); setModel(nextProvider === 'openai' ? OPENAI_DEFAULT_MODEL : nextProvider === 'omniroute' ? OMNIROUTE_DEFAULT_MODEL : nextProvider === 'auto' ? '' : DEFAULT_MODEL); setShowConnectHint(false); }}><option value="auto">Auto-detect (OpenAI-compatible API)</option><option value="groq">Groq API</option><option value="openai">OpenAI API</option><option value="omniroute">Omniroute (OpenAI-compatible)</option></select></label>
+        {(provider === 'omniroute' || provider === 'auto') && <label>{provider === 'auto' ? 'API BASE URL' : 'OMNIROUTE BASE URL'} <input value={omnirouteBaseUrl} onChange={e => setOmnirouteBaseUrl(e.target.value)} placeholder="https://your-provider.example/v1" autoComplete="off" /><span className="field-help">Auto-detect expects an OpenAI-compatible /models and /chat/completions API. On Android, localhost means the phone, not your PC or VPS. Use HTTPS for remote endpoints and never expose an unauthenticated service.</span></label>}
+        <label>{provider === 'openai' ? 'OPENAI API KEY' : provider === 'omniroute' ? 'OMNIROUTE API KEY (IF REQUIRED)' : 'GROQ API KEY'} <input type="password" autoComplete="off" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={provider === 'openai' ? 'Paste your OpenAI Platform API key' : (provider === 'omniroute' || provider === 'auto') ? 'Optional, if your endpoint requires a key' : 'Paste your Groq API key'} /></label>
+        {provider !== 'omniroute' && provider !== 'auto' && <p className="provider-help"><a href={provider === 'openai' ? 'https://platform.openai.com/api-keys' : 'https://console.groq.com/keys'} target="_blank" rel="noreferrer">Get {provider === 'openai' ? 'an OpenAI API key' : 'a Groq API key'} ↗</a>{provider === 'openai' ? ' API use is billed separately from ChatGPT plans.' : ' Check your provider usage limits.'}</p>}
+        <label>MODEL <input value={model} onChange={e => setModel(e.target.value)} placeholder={provider === 'openai' ? OPENAI_DEFAULT_MODEL : provider === 'auto' ? 'Leave blank to discover from /models' : DEFAULT_MODEL} /></label>
         <div className="security-note"><ShieldCheck size={18} /><span><strong>Memory-only credential.</strong> Chat and approved tools go directly to the selected AI API. Never commit keys to GitHub. Anyone inspecting a running app may still be able to access its key.</span></div>
         <div className="voice-settings">
           <div className="eyebrow"><span className="eyebrow-line" /> LOCAL MEMORY</div>
@@ -960,8 +974,8 @@ export default function App() {
           <div className="voice-actions"><span>STATUS: {voiceStatus}</span><button className="secondary-button" disabled={!fishApiKey.trim()} onClick={testVoice}>Test voice</button><button className="secondary-button" onClick={() => { setFishApiKey(''); setVoiceStatus('FISH AUDIO KEY REQUIRED'); }}>Clear voice key</button></div>
           <div className="security-note"><ShieldCheck size={18} /><span><strong>Voice privacy and usage.</strong> The selected voice ID and reply text are sent to Fish Audio to generate speech. Your Fish Audio key remains in app memory; usage limits or charges may apply.</span></div>
         </div>
-        <div className="modal-actions"><button className="secondary-button" onClick={() => { setApiKey(''); setModel(provider === 'openai' ? OPENAI_DEFAULT_MODEL : provider === 'omniroute' ? OMNIROUTE_DEFAULT_MODEL : DEFAULT_MODEL); setStatus('API KEY REQUIRED'); setShowConnectHint(false); }}>Clear AI key</button><button className="primary-button" onClick={saveSettings}><Check size={16} /> {provider === 'openai' ? 'Use OpenAI' : provider === 'omniroute' ? 'Use Omniroute' : 'Use Groq'}</button></div>
-        {showConnectHint && <p className="saved-note">{apiKey.trim() ? provider === 'openai' ? 'OpenAI key is held in memory. Send a message to test the connection.' : provider === 'omniroute' ? 'Omniroute key is held in memory. Send a message to test the connection.' : 'Groq key is held in memory. Send a message to test the connection.' : provider === 'omniroute' ? 'Omniroute endpoint saved. Send a message to test the connection.' : 'No AI key is configured. Add a provider API key to use chat.'}</p>}
+        <div className="modal-actions"><button className="secondary-button" onClick={() => { setApiKey(''); setModel(provider === 'openai' ? OPENAI_DEFAULT_MODEL : provider === 'omniroute' ? OMNIROUTE_DEFAULT_MODEL : provider === 'auto' ? '' : DEFAULT_MODEL); setStatus('API KEY REQUIRED'); setShowConnectHint(false); }}>Clear AI key</button><button className="primary-button" onClick={saveSettings}><Check size={16} /> {provider === 'openai' ? 'Use OpenAI' : provider === 'omniroute' ? 'Use Omniroute' : provider === 'auto' ? 'Use Auto-detect' : 'Use Groq'}</button></div>
+        {showConnectHint && <p className="saved-note">{apiKey.trim() ? provider === 'openai' ? 'OpenAI key is held in memory. Send a message to test the connection.' : provider === 'omniroute' ? 'Omniroute key is held in memory. Send a message to test the connection.' : 'Groq key is held in memory. Send a message to test the connection.' : provider === 'omniroute' ? 'Omniroute endpoint saved. Send a message to test the connection.' : provider === 'auto' ? 'API endpoint saved. Leave the model blank to discover one automatically, then send a message to test.' : 'No AI key is configured. Add a provider API key to use chat.'}</p>}
       </section>
     </div>}
   </main>;
