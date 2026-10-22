@@ -394,7 +394,7 @@ export default function App() {
   const [omnirouteApiKey, setOmnirouteApiKey] = useState('');
   const [omnirouteBaseUrl, setOmnirouteBaseUrl] = useState('http://127.0.0.1:20128/v1');
   const apiKey = provider === 'openai' ? openAiApiKey : (provider === 'omniroute' || provider === 'auto') ? omnirouteApiKey : groqApiKey;
-  const setApiKey = provider === 'openai' ? setOpenAiApiKey : provider === 'omniroute' ? setOmnirouteApiKey : setGroqApiKey;
+  const setApiKey = provider === 'openai' ? setOpenAiApiKey : (provider === 'omniroute' || provider === 'auto') ? setOmnirouteApiKey : setGroqApiKey;
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [memoryNotes, setMemoryNotes] = useState(() => readLocalText(MEMORY_STORAGE_KEY));
   const [fishApiKey, setFishApiKey] = useState('');
