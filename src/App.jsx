@@ -30,6 +30,15 @@ const providerLabel = value => ({
   groq: 'Groq', openai: 'OpenAI', omniroute: 'Omniroute', auto: 'Auto-detect',
   openrouter: 'OpenRouter', deepseek: 'DeepSeek', mistral: 'Mistral', xai: 'xAI', gemini: 'Google Gemini',
 }[value] || 'AI provider');
+const providerDefaultModel = value => ({
+  openai: OPENAI_DEFAULT_MODEL,
+  omniroute: OMNIROUTE_DEFAULT_MODEL,
+  gemini: 'gemini-2.5-flash',
+  deepseek: 'deepseek-chat',
+  mistral: 'mistral-small-latest',
+  xai: 'grok-3-mini',
+  openrouter: 'openai/gpt-4o-mini',
+}[value] || DEFAULT_MODEL);
 const CHAT_STORAGE_KEY = 'jarvis.chat-history.v1';
 const MEMORY_STORAGE_KEY = 'jarvis.memory-notes.v1';
 
@@ -965,7 +974,7 @@ export default function App() {
       <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div className="modal-head"><div><span className="eyebrow">CONNECTION CONTROL</span><h2 id="settings-title">Configure AI link</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Close settings">×</button></div>
         <p className="modal-copy">Choose a provider directly or use any OpenAI-compatible API endpoint. Chat keys stay in memory only. Chat history and notes below are stored locally on this device; never put secrets in memory notes.</p>
-        <label>AI PROVIDER <select value={provider} onChange={e => { const nextProvider = e.target.value; setProvider(nextProvider); if (Object.hasOwn(COMPATIBLE_PROVIDER_URLS, nextProvider)) setOmnirouteBaseUrl(COMPATIBLE_PROVIDER_URLS[nextProvider]); setModel(nextProvider === 'openai' ? OPENAI_DEFAULT_MODEL : nextProvider === 'omniroute' ? OMNIROUTE_DEFAULT_MODEL : nextProvider === 'auto' ? '' : nextProvider === 'gemini' ? 'gemini-2.5-flash' : DEFAULT_MODEL); setShowConnectHint(false); }}>
+        <label>AI PROVIDER <select value={provider} onChange={e => { const nextProvider = e.target.value; setProvider(nextProvider); if (Object.hasOwn(COMPATIBLE_PROVIDER_URLS, nextProvider)) setOmnirouteBaseUrl(COMPATIBLE_PROVIDER_URLS[nextProvider]); setModel(nextProvider === 'auto' ? '' : providerDefaultModel(nextProvider)); setShowConnectHint(false); }}>
           <option value="groq">Groq API</option><option value="openai">OpenAI API</option><option value="gemini">Google Gemini (OpenAI-compatible)</option><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek</option><option value="mistral">Mistral AI</option><option value="xai">xAI Grok</option><option value="omniroute">Omniroute / custom endpoint</option><option value="auto">Auto-detect (OpenAI-compatible API)</option>
         </select></label>
         {(provider === 'omniroute' || provider === 'auto') && <label>{provider === 'auto' ? 'API BASE URL' : 'CUSTOM API BASE URL'} <input value={omnirouteBaseUrl} onChange={e => setOmnirouteBaseUrl(e.target.value)} placeholder="https://your-provider.example/v1" autoComplete="off" /><span className="field-help">Must implement OpenAI-compatible /chat/completions. Auto-detect also needs /models. On Android, localhost means the phone, not your PC or VPS. Use HTTPS for remote endpoints and never expose an unauthenticated service.</span></label>}
@@ -988,7 +997,7 @@ export default function App() {
           <div className="voice-actions"><span>STATUS: {voiceStatus}</span><button className="secondary-button" disabled={!fishApiKey.trim()} onClick={testVoice}>Test voice</button><button className="secondary-button" onClick={() => { setFishApiKey(''); setVoiceStatus('FISH AUDIO KEY REQUIRED'); }}>Clear voice key</button></div>
           <div className="security-note"><ShieldCheck size={18} /><span><strong>Voice privacy and usage.</strong> The selected voice ID and reply text are sent to Fish Audio to generate speech. Your Fish Audio key remains in app memory; usage limits or charges may apply.</span></div>
         </div>
-        <div className="modal-actions"><button className="secondary-button" onClick={() => { setApiKey(''); setModel(provider === 'openai' ? OPENAI_DEFAULT_MODEL : provider === 'omniroute' ? OMNIROUTE_DEFAULT_MODEL : provider === 'auto' ? '' : provider === 'gemini' ? 'gemini-2.5-flash' : DEFAULT_MODEL); setStatus('API KEY REQUIRED'); setShowConnectHint(false); }}>Clear AI key</button><button className="primary-button" onClick={saveSettings}><Check size={16} /> Use {providerLabel(provider)}</button></div>
+        <div className="modal-actions"><button className="secondary-button" onClick={() => { setApiKey(''); setModel(provider === 'auto' ? '' : providerDefaultModel(provider)); setStatus('API KEY REQUIRED'); setShowConnectHint(false); }}>Clear AI key</button><button className="primary-button" onClick={saveSettings}><Check size={16} /> Use {providerLabel(provider)}</button></div>
         {showConnectHint && <p className="saved-note">{apiKey.trim() ? providerLabel(provider) + ' key is held in memory. Send a message to test the connection.' : provider === 'omniroute' ? 'Omniroute endpoint saved. Send a message to test the connection.' : provider === 'auto' ? 'API endpoint saved. Leave the model blank to discover one automatically, then send a message to test.' : 'No AI key is configured. Add a provider API key to use chat.'}</p>}
       </section>
     </div>}
