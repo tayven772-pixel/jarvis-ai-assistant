@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 /**
  * JARVIS remote MCP endpoint using Streamable HTTP's JSON response mode.
- * Requires JARVIS_MCP_TOKEN; never deploy this endpoint without a strong token.
+ * Public endpoint: no bearer token required. Exposes read-only tools only.
  * Read-only tools only. No arbitrary shell, file writes, or device control.
  */
 import http from 'node:http';
 
 const PORT = Number(process.env.PORT || 3000);
-const TOKEN = process.env.JARVIS_MCP_TOKEN || '';
 const SERVER_INFO = { name: 'jarvis-mcp-server', version: '0.2.0' };
 const PROTOCOL_VERSION = '2024-11-05';
 
@@ -40,7 +39,7 @@ async function callTool(name) {
   }
   if (name === 'jarvis_connection_guide') return resultText([
     'This is the hosted JARVIS MCP endpoint using Streamable HTTP.',
-    'The endpoint requires a bearer token configured by the owner.',
+    'This endpoint is public and does not require a bearer token.',
     'Only read-only status and local Ollama discovery tools are exposed.',
     'This hosted server does not control the owner’s Android phone or Windows PC.',
   ].join('\n'));
@@ -67,9 +66,6 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { service: SERVER_INFO.name, status: 'online', health: '/health', mcp: '/mcp' });
   }
   if (pathname !== '/mcp') return send(res, 404, { error: 'Not found', path: pathname });
-  if (!TOKEN || TOKEN.length < 32) return send(res, 503, { error: 'Server authentication is not configured safely.' });
-  const auth = req.headers.authorization || '';
-  if (auth !== 'Bearer ' + TOKEN) return send(res, 401, { error: 'Unauthorized' });
   if (req.method !== 'POST') {
     res.setHeader('allow', 'POST');
     return send(res, 405, { error: 'Use POST for MCP requests.' });
