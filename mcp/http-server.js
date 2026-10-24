@@ -46,7 +46,7 @@ async function callTool(name) {
     'This endpoint is public and does not require a bearer token.',
     'Tools are read-only and do not expose arbitrary shell commands, file writes, or device control.',
     'This hosted server does not control the owner’s Android phone or Windows PC.',
-  ].join('\\n'));
+  ].join('\n'));
   if (name === 'jarvis_server_time') return resultText(JSON.stringify({
     utc: new Date().toISOString(),
     timezone: 'UTC',
@@ -67,7 +67,7 @@ async function callTool(name) {
     'For custom OpenAI-compatible endpoints, verify the HTTPS base URL and documented /chat/completions support. Auto-detect additionally requires /models.',
     'On Android, 127.0.0.1 refers to the phone itself; on Windows, it refers to that Windows computer.',
     'API access may be billed separately from a consumer chat subscription. Review the provider’s current pricing.',
-  ].join('\\n'));
+  ].join('\n'));
   if (name === 'jarvis_troubleshoot') return resultText(JSON.stringify({
     endpoint: 'https://jarvis-mcp-remote.onrender.com/mcp',
     checks: [
