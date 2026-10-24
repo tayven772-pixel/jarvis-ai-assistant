@@ -839,7 +839,7 @@ export default function App() {
   };
 
   const saveSettings = () => {
-    setStatus(apiKey.trim() ? (provider === 'openai' ? 'OPENAI API KEY READY' : provider === 'omniroute' ? 'OMNIROUTE KEY READY' : 'GROQ KEY READY') : provider === 'omniroute' ? 'OMNIROUTE READY' : 'API KEY REQUIRED');
+    setStatus(apiKey.trim() ? providerLabel(provider).toUpperCase() + ' KEY READY' : (provider === 'omniroute' || provider === 'auto') ? providerLabel(provider).toUpperCase() + ' READY' : 'API KEY REQUIRED');
     setShowConnectHint(true);
     setSettingsOpen(false);
   };
@@ -989,7 +989,7 @@ export default function App() {
           <div className="security-note"><ShieldCheck size={18} /><span><strong>Voice privacy and usage.</strong> The selected voice ID and reply text are sent to Fish Audio to generate speech. Your Fish Audio key remains in app memory; usage limits or charges may apply.</span></div>
         </div>
         <div className="modal-actions"><button className="secondary-button" onClick={() => { setApiKey(''); setModel(provider === 'openai' ? OPENAI_DEFAULT_MODEL : provider === 'omniroute' ? OMNIROUTE_DEFAULT_MODEL : provider === 'auto' ? '' : provider === 'gemini' ? 'gemini-2.5-flash' : DEFAULT_MODEL); setStatus('API KEY REQUIRED'); setShowConnectHint(false); }}>Clear AI key</button><button className="primary-button" onClick={saveSettings}><Check size={16} /> Use {providerLabel(provider)}</button></div>
-        {showConnectHint && <p className="saved-note">{apiKey.trim() ? provider === 'openai' ? 'OpenAI key is held in memory. Send a message to test the connection.' : provider === 'omniroute' ? 'Omniroute key is held in memory. Send a message to test the connection.' : 'Groq key is held in memory. Send a message to test the connection.' : provider === 'omniroute' ? 'Omniroute endpoint saved. Send a message to test the connection.' : provider === 'auto' ? 'API endpoint saved. Leave the model blank to discover one automatically, then send a message to test.' : 'No AI key is configured. Add a provider API key to use chat.'}</p>}
+        {showConnectHint && <p className="saved-note">{apiKey.trim() ? providerLabel(provider) + ' key is held in memory. Send a message to test the connection.' : provider === 'omniroute' ? 'Omniroute endpoint saved. Send a message to test the connection.' : provider === 'auto' ? 'API endpoint saved. Leave the model blank to discover one automatically, then send a message to test.' : 'No AI key is configured. Add a provider API key to use chat.'}</p>}
       </section>
     </div>}
   </main>;
