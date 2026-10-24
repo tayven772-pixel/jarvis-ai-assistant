@@ -9,5 +9,3 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22
-      - key: JARVIS_MCP_TOKEN
-        sync: false
