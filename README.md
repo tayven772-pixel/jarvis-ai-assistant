@@ -5,7 +5,7 @@ A standalone J.A.R.V.I.S.-inspired assistant project, separate from Meta Code.
 ## Features
 - Responsive blue holographic dashboard with animated assistant core
 - Read-only disk usage dashboard and local folder-size/file-type analysis for user-selected folders (browser folder-picker support varies by device)
-- Chat with Groq, OpenAI, Omniroute, or auto-detected models from a custom OpenAI-compatible API endpoint
+- Chat with Groq, OpenAI, Google Gemini, OpenRouter, DeepSeek, Mistral, xAI Grok, Omniroute, or custom/auto-detected OpenAI-compatible API endpoints
 - Local conversation history (last 80 messages) and user-editable memory notes
 - Browser speech recognition for voice input where supported
 - Optional Fish Audio text-to-speech for spoken replies
@@ -53,10 +53,12 @@ The **Build JARVIS installers** workflow runs on relevant pushes to `main` or ma
 Open the repository's **Actions** tab, select a completed workflow run, and download its artifacts. Builds have not been verified until a workflow run completes successfully.
 
 ## Configure AI
-Open Settings and choose Groq, OpenAI, or Omniroute.
-- Groq and OpenAI need a provider API key. OpenAI API use is billed separately from ChatGPT plans.
-- Omniroute uses an OpenAI-compatible base URL, defaulting to `http://127.0.0.1:20128/v1`. On Windows, localhost refers to the same computer. On Android, localhost refers to the phone, not a separate VPS or computer. A remote endpoint must be reachable from the device and configured securely; do not expose an unauthenticated service to the public internet.
-- Auto-detect works with APIs that implement the OpenAI-compatible `/models` and `/chat/completions` endpoints; leave Model blank to discover the first listed model, or enter a model ID manually. It cannot automatically make an unrelated proprietary API compatible.
+Open Settings and choose a provider:
+- Built-in options include Groq, OpenAI, Google Gemini (using Google's OpenAI-compatible API), OpenRouter, DeepSeek, Mistral AI, and xAI Grok.
+- Omniroute and Auto-detect accept a custom OpenAI-compatible base URL. Auto-detect can discover a model only if the endpoint implements `/models`; all compatible endpoints must support `/chat/completions`.
+- For preset providers, enter the model ID supported by your provider account. Model names, availability, rate limits, and pricing can change; check each provider's current documentation.
+- Groq, OpenAI, Gemini, OpenRouter, DeepSeek, Mistral, and xAI need their own provider API key. OpenAI API use is billed separately from ChatGPT plans.
+- Omniroute defaults to `http://127.0.0.1:20128/v1`. On Windows, localhost refers to the same computer. On Android, localhost refers to the phone, not a separate VPS or computer. A remote endpoint must be reachable from the device and configured securely; do not expose an unauthenticated service to the public internet.
 - Do not ship API keys inside the web app, APK, EXE, or public repository. Keys entered in Settings stay in app memory only.
 
 ## Memory and privacy
