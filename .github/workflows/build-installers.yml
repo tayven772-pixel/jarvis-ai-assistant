@@ -15,7 +15,7 @@ on:
       - ".github/workflows/build-installers.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows:
@@ -46,14 +46,33 @@ jobs:
           $exclude = @(".git", "node_modules", "dist", "release", "android", ".env")
           $items = Get-ChildItem -Force | Where-Object { $exclude -notcontains $_.Name }
           Compress-Archive -Path $items.FullName -DestinationPath "jarvis-source-v$version.zip" -Force
-      - name: Upload Windows installer
+      - name: Prepare stable download names
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release/*.exe | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer was not produced." }
+          Copy-Item $installer.FullName "jarvis-windows-latest.exe"
+          Copy-Item "jarvis-source-v${{ steps.version.outputs.version }}.zip" "jarvis-source-latest.zip"
+      - name: Publish versioned GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: JARVIS v${{ steps.version.outputs.version }}
+          make_latest: true
+          generate_release_notes: true
+          files: |
+            release/*.exe
+            jarvis-source-v${{ steps.version.outputs.version }}.zip
+            jarvis-windows-latest.exe
+            jarvis-source-latest.zip
+      - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: jarvis-windows-v${{ steps.version.outputs.version }}
           path: release/*.exe
           if-no-files-found: error
           retention-days: 30
-      - name: Upload source ZIP
+      - name: Upload source ZIP artifact
         uses: actions/upload-artifact@v4
         with:
           name: jarvis-source-v${{ steps.version.outputs.version }}
