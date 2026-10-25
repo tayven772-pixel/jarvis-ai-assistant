@@ -26,15 +26,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Read version
+      - name: Generate build version
         id: version
         shell: pwsh
         run: |
-          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $version = "0.1.${{ github.run_number }}"
+          npm pkg set version=$version
           "version=$version" >> $env:GITHUB_OUTPUT
       - name: Install dependencies
         run: npm install
       - name: Build Windows installer
+        env:
+          VITE_APP_VERSION: ${{ steps.version.outputs.version }}
         run: npm run desktop:build
       - name: Package source ZIP
         shell: pwsh
