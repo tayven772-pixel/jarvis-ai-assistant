@@ -86,6 +86,7 @@ const WEB_DESTINATIONS = {
 const AI_TOOLS = [
   { type: 'function', function: { name: 'open_app', description: 'Launch an installed app by its visible name when the user asks to open it.', parameters: { type: 'object', properties: { app_name: { type: 'string', minLength: 1, maxLength: 120 } }, required: ['app_name'], additionalProperties: false } } },
   { type: 'function', function: { name: 'open_website', description: 'Open an approved website when the user asks to visit it.', parameters: { type: 'object', properties: { site: { type: 'string', enum: Object.keys(WEB_DESTINATIONS) } }, required: ['site'], additionalProperties: false } } },
+  { type: 'function', function: { name: 'open_url', description: 'Open a user-requested public website by domain or HTTPS URL. Use this for any website not in the shortcut list.', parameters: { type: 'object', properties: { url: { type: 'string', minLength: 3, maxLength: 2048 } }, required: ['url'], additionalProperties: false } } },
   { type: 'function', function: { name: 'search_web', description: 'Open a Google search when the user asks to search online. This does not read results.', parameters: { type: 'object', properties: { query: { type: 'string', minLength: 1, maxLength: 240 } }, required: ['query'], additionalProperties: false } } },
   { type: 'function', function: { name: 'copy_text', description: 'Copy text only when the user explicitly asks to copy it.', parameters: { type: 'object', properties: { text: { type: 'string', minLength: 1, maxLength: 12000 } }, required: ['text'], additionalProperties: false } } },
   { type: 'function', function: { name: 'create_calendar_event', description: 'Create an Android calendar event for a clear user request. If no time is given, use an all-day event and a 900-minute reminder. Ask for missing details.', parameters: { type: 'object', properties: { title: { type: 'string', minLength: 1, maxLength: 180 }, date: { type: 'string', description: 'Date in YYYY-MM-DD format' }, time: { type: 'string', description: 'Local 24-hour HH:mm time, or empty for all-day' }, all_day: { type: 'boolean' }, reminder_minutes: { type: 'integer', minimum: -1, maximum: 40320 } }, required: ['title', 'date', 'time', 'all_day', 'reminder_minutes'], additionalProperties: false } } },
@@ -316,6 +317,20 @@ async function runAssistantTool(toolCall, userRequest, installedApps) {
       const destination = WEB_DESTINATIONS[args.site];
       if (!destination) return { success: false, message: 'That website is not on the approved destination list.' };
       return await openExternalUrl(destination.url);
+    }
+    case 'open_url': {
+      if (!asksToOpen) return { success: false, message: 'Not executed: the user did not clearly ask to open a website.' };
+      let url;
+      try {
+        const raw = String(args.url || '').trim().slice(0, 2048);
+        url = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw);
+        if (url.protocol !== 'https:' || !url.hostname || !url.hostname.includes('.') || url.username || url.password) {
+          return { success: false, message: 'For safety, I can open public HTTPS websites only. Try a full https:// link.' };
+        }
+      } catch {
+        return { success: false, message: 'That does not look like a valid website address. Try a domain such as example.com.' };
+      }
+      return await openExternalUrl(url.toString());
     }
     case 'search_web': {
       if (!asksToSearch) return { success: false, message: 'Not executed: the user did not clearly ask to search online.' };
