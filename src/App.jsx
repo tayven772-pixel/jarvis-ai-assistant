@@ -951,7 +951,7 @@ export default function App() {
       <div className="console-disclaimer"><ShieldCheck size={13} /> {provider.toUpperCase()} AI · USER-ENABLED ANDROID SCREEN CONTROL · CONSEQUENTIAL ACTIONS REQUIRE MANUAL REVIEW</div>
     </section>
 
-    <footer className="footer"><span>J.A.R.V.I.S. INTERFACE <b>v0.1.0</b></span><span>BUILT FOR HUMAN-APPROVED ASSISTANCE</span><span><span className="status-dot" /> SYSTEM READY</span></footer>
+    <footer className="footer"><span>J.A.R.V.I.S. INTERFACE <b>v{import.meta.env.VITE_APP_VERSION || "DEV"}</b></span><span>BUILT FOR HUMAN-APPROVED ASSISTANCE</span><span><span className="status-dot" /> SYSTEM READY</span></footer>
 
     {storageOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setStorageOpen(false); }}>
       <section className="settings-modal storage-modal" role="dialog" aria-modal="true" aria-labelledby="storage-title">
