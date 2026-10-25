@@ -54,14 +54,26 @@ ipcMain.handle("jarvis:desktop:get-storage-info", async () => {
   return { success: true, source: "windows", volumes };
 });
 
-ipcMain.handle("jarvis:desktop:launch-app", async (_event, requestedAppId) => {
+ipcMain.handle("jarvis:desktop:launch-app", async (_event, requestedIdentifier) => {
   if (process.platform !== "win32") throw new Error("Installed-app launching through this bridge is supported on Windows only.");
-  if (typeof requestedAppId !== "string" || requestedAppId.length < 1 || requestedAppId.length > 512) {
-    throw new Error("Invalid app identifier.");
+  if (typeof requestedIdentifier !== "string" || requestedIdentifier.trim().length < 1 || requestedIdentifier.length > 512) {
+    throw new Error("Missing app identifier. Refresh the installed-app list and try again.");
   }
+
+  const identifier = requestedIdentifier.trim();
   const apps = await listWindowsStartApps();
-  const target = apps.find(item => item.appId === requestedAppId);
-  if (!target) throw new Error("That app is not in the current Windows Start menu app list.");
+  const target = apps.find(item => item.appId === identifier || item.name.toLowerCase() === identifier.toLowerCase());
+  if (!target) throw new Error("That app is not in the current Windows Start menu app list. Refresh the app list and try again.");
+
+  // Chrome's Start menu AppID is commonly just "Chrome"; launching the executable
+  // directly is more reliable than routing it through AppsFolder on some Windows installs.
+  if (/^chrome$/i.test(target.appId) || /^google chrome$/i.test(target.name)) {
+    await execFileAsync("powershell.exe", [
+      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+      "Start-Process -FilePath 'chrome.exe' -ArgumentList '--new-window'"
+    ], { windowsHide: true, timeout: 10000, maxBuffer: 1024 * 1024 });
+    return { success: true, name: target.name, message: "Opened a new Google Chrome window." };
+  }
 
   await execFileAsync("explorer.exe", ["shell:AppsFolder\\" + target.appId], {
     windowsHide: true,

@@ -248,7 +248,7 @@ async function launchInstalledApp(requestedName, installedApps) {
   }
 
   if (typeof window !== 'undefined' && window.jarvisDesktop?.launchApp) {
-    const result = await window.jarvisDesktop.launchApp(target.appId);
+    const result = await window.jarvisDesktop.launchApp(target.appId || target.name || target.label || '');
     return result?.success
       ? { success: true, message: result.message || 'Asked Windows to open ' + target.name + '.' }
       : { success: false, message: result?.message || 'Windows could not launch ' + target.name + '.' };
